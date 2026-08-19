@@ -2851,19 +2851,15 @@ class ShoubanhuaPlugin(Star):
         调用此工具后，系统会自动返回用户的身份（VIP或普通）。
         你不需要提前调用 check_user_status_tool，直接调用本工具即可。
 
-        【画面参数 - 极度重要】
-        - aspect_ratio 和 resolution 必须【始终保持 auto】！
-        - 除非用户在消息中【明确写出了】具体的比例(如"4:3")或画质(如"4K")，否则【绝对不要】自己传值！
-        - 后台配置已经设好了默认的比例和分辨率，传 auto 会自动使用后台配置值。
-        - 你【没有资格】替用户决定画质和比例，除非用户明确要求。
-        - 错误示范：resolution="1K" ← 这是你在擅自替用户做决定！
-        - 正确示范：resolution="auto" ← 让后台配置生效！
+        【画面参数】
+        - 用户写了比例或 1K/2K/4K 时，可传入对应参数；不确定时保持 auto，插件会直接从 prompt 识别。
+        - 用户没写时不要擅自猜测：文生图会使用后台配置的默认比例和分辨率。
 
         Args:
             prompt(string): 图片生成的提示词，可以是预设名+追加规则。
             count(int): 生成图片的数量，默认1张，最大10张。当用户要求"多来点"时设置为3张。
-            aspect_ratio(string): 图片宽高比。【必须传 auto】，除非用户明确指定。会从 prompt 和后台配置自动识别。
-            resolution(string): 图片清晰度。【必须传 auto】，除非用户明确指定。会从 prompt 和后台配置自动识别。
+            aspect_ratio(string): 图片宽高比。默认 auto，会从 prompt 自动识别；也可显式传 1:1、16:9、9:16、5:4、4:5、4:3、3:4、3:2、2:3、21:9。
+            resolution(string): 图片清晰度。默认 auto，会从 prompt 自动识别 1K、2K、4K；也可显式传对应值。
         '''
         # 0. 检查 LLM 工具开关
         if not self._get_conf_bool("enable_llm_tool", True):
