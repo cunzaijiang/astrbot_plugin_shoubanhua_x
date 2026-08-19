@@ -337,7 +337,7 @@ class DataManager:
     async def check_and_auto_cleanup(self) -> int:
         """检查并根据配置的容量上限自动清理最旧的图片 (默认50%)"""
         try:
-            max_gb = float(self.config.get("image_storage_max_gb", 5.0) or 5.0)
+            max_gb = float(self.config.get("image_storage_max_gb", "5") or "5")
             ratio = float(self.config.get("image_cleanup_ratio", 0.5) or 0.5)
             ratio = max(0.1, min(0.9, ratio))
 

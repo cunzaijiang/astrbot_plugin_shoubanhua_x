@@ -504,7 +504,7 @@ class WebApiHandler:
                 "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
                 "items": items,
                 "storage": storage_info,
-                "max_gb": float(self.plugin.conf.get("image_storage_max_gb", 5.0) or 5.0),
+                "max_gb": float(self.plugin.conf.get("image_storage_max_gb", "5") or "5"),
                 "cleanup_ratio": float(self.plugin.conf.get("image_cleanup_ratio", 0.5) or 0.5)
             }
         })

@@ -1,9 +1,14 @@
 {
     "image_storage_max_gb": {
-        "description": "【存储管理】历史图片存储上限 (GB)",
-        "type": "float",
+        "description": "【存储管理】历史图片存储上限",
+        "type": "string",
         "hint": "当 generated_images 存储目录超过此容量时，将自动触发旧图片清理以释放磁盘空间。",
-        "default": 5.0
+        "default": "5",
+        "options": [
+            "1",
+            "3",
+            "5"
+        ]
     },
     "image_cleanup_ratio": {
         "description": "【存储管理】自动清理比例 (0.1~0.9)",
@@ -33,7 +38,12 @@
                 "interface_mode": {
                     "type": "string",
                     "description": "接口模式",
-                    "options": ["openai_image", "openai_chat", "gemini_official", "custom_endpoint"],
+                    "options": [
+                        "openai_image",
+                        "openai_chat",
+                        "gemini_official",
+                        "custom_endpoint"
+                    ],
                     "default": "openai_image"
                 },
                 "base_url": {
@@ -368,22 +378,22 @@
         "max": 10086
     },
     "enable_llm_tool": {
-      "description": "【LLM】启用LLM工具调用",
-      "type": "bool",
-      "hint": "是否允许LLM通过工具调用触发图片生成",
-      "default": true
+        "description": "【LLM】启用LLM工具调用",
+        "type": "bool",
+        "hint": "是否允许LLM通过工具调用触发图片生成",
+        "default": true
     },
     "llm_show_progress": {
-      "description": "【LLM】调用显示进度",
-      "type": "bool",
-      "hint": "LLM工具调用时是否发送生成状态提示（如'正在生成...'），关闭后直接发送结果图片",
-      "default": true
+        "description": "【LLM】调用显示进度",
+        "type": "bool",
+        "hint": "LLM工具调用时是否发送生成状态提示（如'正在生成...'），关闭后直接发送结果图片",
+        "default": true
     },
     "llm_cooldown_seconds": {
-      "description": "【LLM】工具调用冷却时间(秒)",
-      "type": "int",
-      "hint": "LLM工具调用后的冷却时间，防止用户无节制刷图。设为0则不限制。",
-      "default": 60
+        "description": "【LLM】工具调用冷却时间(秒)",
+        "type": "int",
+        "hint": "LLM工具调用后的冷却时间，防止用户无节制刷图。设为0则不限制。",
+        "default": 60
     },
     "enable_llm_auto_detect": {
         "description": "【LLM】启用智能判断",
@@ -465,7 +475,11 @@
             "type": "string",
             "description": "关键词"
         },
-        "default": ["拍照", "自拍", "看看你"]
+        "default": [
+            "拍照",
+            "自拍",
+            "看看你"
+        ]
     },
     "persona_scene_prompts": {
         "description": "【人设】场景提示词映射",
@@ -475,7 +489,12 @@
             "type": "string",
             "description": "场景:提示词"
         },
-        "default": ["咖啡店:在咖啡店里悠闲地喝咖啡", "家里:在房间里的日常生活场景", "公园:在公园里散步或休息", "学校:在校园里的日常"]
+        "default": [
+            "咖啡店:在咖啡店里悠闲地喝咖啡",
+            "家里:在房间里的日常生活场景",
+            "公园:在公园里散步或休息",
+            "学校:在校园里的日常"
+        ]
     },
     "persona_default_prompt": {
         "description": "【人设】默认场景提示词",
