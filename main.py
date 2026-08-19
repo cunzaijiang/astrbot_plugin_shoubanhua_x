@@ -2531,6 +2531,10 @@ class ShoubanhuaPlugin(Star):
                                 res = await self._prepare_send_image_bytes(res)
                                 elapsed = (datetime.now() - start_time).total_seconds()
                                 await self.data_mgr.record_usage(uid, gid)
+                                await self.data_mgr.record_generated_image(
+                                    image_bytes=res, uid=uid, gid=gid,
+                                    prompt=prompt, preset_name=preset_name, model=model
+                                )
                                 await self._register_generation_success(event.unified_msg_origin, 1)
                                 await self._register_generated_image(event.unified_msg_origin, res)
 
@@ -2671,6 +2675,10 @@ class ShoubanhuaPlugin(Star):
                                 res = await self._prepare_send_image_bytes(res)
                                 elapsed = (datetime.now() - start_time).total_seconds()
                                 await self.data_mgr.record_usage(uid, gid)
+                                await self.data_mgr.record_generated_image(
+                                    image_bytes=res, uid=uid, gid=gid,
+                                    prompt=prompt, preset_name=preset_name, model=model
+                                )
                                 await self._register_generation_success(event.unified_msg_origin, 1)
                                 await self._register_generated_image(event.unified_msg_origin, res)
 
@@ -3364,6 +3372,10 @@ class ShoubanhuaPlugin(Star):
             res = await self._prepare_send_image_bytes(res)
             elapsed = (datetime.now() - start).total_seconds()
             await self.data_mgr.record_usage(uid, gid)
+            await self.data_mgr.record_generated_image(
+                image_bytes=res, uid=uid, gid=gid,
+                prompt=user_prompt, preset_name=preset_name, model=model
+            )
             await self._register_generation_success(event.unified_msg_origin, 1)
             await self._register_generated_image(event.unified_msg_origin, res)
             if not is_bnn: await self.data_mgr.save_preset_image(base_cmd, res)
@@ -3429,6 +3441,10 @@ class ShoubanhuaPlugin(Star):
             res = await self._prepare_send_image_bytes(res)
             elapsed = (datetime.now() - start).total_seconds()
             await self.data_mgr.record_usage(uid, norm_id(event.get_group_id()))
+            await self.data_mgr.record_generated_image(
+                image_bytes=res, uid=uid, gid=norm_id(event.get_group_id()),
+                prompt=final_prompt, preset_name=preset_name, model=model
+            )
             await self._register_generation_success(event.unified_msg_origin, 1)
             await self._register_generated_image(event.unified_msg_origin, res)
             quota_str = self._get_quota_str(deduction, uid, norm_id(event.get_group_id()))
@@ -4764,6 +4780,10 @@ class ShoubanhuaPlugin(Star):
                 res = await self._prepare_send_image_bytes(res)
                 elapsed = (datetime.now() - start_time).total_seconds()
                 await self.data_mgr.record_usage(uid, gid)
+                await self.data_mgr.record_generated_image(
+                    image_bytes=res, uid=uid, gid=gid,
+                    prompt=prompt, preset_name=preset_name, model=model
+                )
                 await self._register_generation_success(event.unified_msg_origin, 1)
                 await self._register_generated_image(event.unified_msg_origin, res)
 
@@ -5102,6 +5122,10 @@ class ShoubanhuaPlugin(Star):
                                     res = await self._prepare_send_image_bytes(res)
                                     pdf_result_images.append(res)
                                     await self.data_mgr.record_usage(uid, gid)
+                                    await self.data_mgr.record_generated_image(
+                                        image_bytes=res, uid=uid, gid=gid,
+                                        prompt=prompt, preset_name=preset_name, model=model
+                                    )
                                     await self._register_generation_success(event.unified_msg_origin, 1)
                                     await self._register_generated_image(event.unified_msg_origin, res)
                                     success = True
@@ -5394,6 +5418,10 @@ class ShoubanhuaPlugin(Star):
                                     async with results_lock:
                                         pdf_result_images_dict[index] = res
                                     await self.data_mgr.record_usage(uid, gid)
+                                    await self.data_mgr.record_generated_image(
+                                        image_bytes=res, uid=uid, gid=gid,
+                                        prompt=prompt, preset_name=preset_name, model=model
+                                    )
                                     await self._register_generation_success(event.unified_msg_origin, 1)
                                     await self._register_generated_image(event.unified_msg_origin, res)
                                     success = True
@@ -5892,6 +5920,10 @@ class ShoubanhuaPlugin(Star):
             res = await self._prepare_send_image_bytes(res)
             elapsed = (datetime.now() - start).total_seconds()
             await self.data_mgr.record_usage(uid, gid)
+            await self.data_mgr.record_generated_image(
+                image_bytes=res, uid=uid, gid=gid,
+                prompt=full_prompt, preset_name="人设", model=model
+            )
             await self._register_generation_success(event.unified_msg_origin, 1)
             await self._register_generated_image(event.unified_msg_origin, res)
 
