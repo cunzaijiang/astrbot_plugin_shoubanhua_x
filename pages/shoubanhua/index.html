@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>手办化x · 控制台</title>
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./style.css?v=20260819b" />
 </head>
 <body>
   <div class="app-container">
@@ -248,8 +248,12 @@
 
             <div class="grid-2" style="margin-top: 12px;">
               <div class="form-group">
-                <label class="form-label">历史图片存储上限 (GB)</label>
-                <input type="number" step="0.5" class="form-input" id="cfgStorageMaxGB" value="5.0" />
+                <label class="form-label">历史图片存储上限</label>
+                <select class="form-select" id="cfgStorageMaxGB">
+                  <option value="1">1 GB</option>
+                  <option value="3">3 GB</option>
+                  <option value="5" selected>5 GB</option>
+                </select>
               </div>
               <div class="form-group">
                 <label class="form-label">超限自动清理比例</label>
@@ -483,6 +487,6 @@
   </div>
 
   <!-- Bridge and App Script -->
-  <script src="./app.js"></script>
+  <script src="./app.js?v=20260819b"></script>
 </body>
 </html>
