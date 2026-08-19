@@ -17,8 +17,8 @@ help: |
   - #手办化查询次数 - 查看剩余生图配额
   - #手办化今日统计 - (管理员)查看今日调用榜
 version: v3.0.0
-author: shskjw
-repo: https://github.com/shskjw/astrbot_plugin_shoubanhua
+author: cunzaijiang
+repo: https://github.com/cunzaijiang/astrbot_plugin_shoubanhua_x
 pages:
   - name: shoubanhua
     title: 手办化x

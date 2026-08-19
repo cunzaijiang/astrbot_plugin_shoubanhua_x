@@ -29,7 +29,7 @@
 ### 方式二：Git 仓库链接一键安装
 在 AstrBot 控制台插件管理中添加 Git 地址：
 ```text
-https://github.com/shskjw/astrbot_plugin_shoubanhua
+https://github.com/cunzaijiang/astrbot_plugin_shoubanhua_x
 ```
 
 ---
