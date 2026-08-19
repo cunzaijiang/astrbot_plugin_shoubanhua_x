@@ -54,6 +54,7 @@ class DataManager:
         self.user_prompts: Dict[str, str] = {}
         self.preset_ref_images: Dict[str, List[str]] = {}  # 预设参考图: {预设名: [图片文件名列表]}
         self.history_records: List[Dict[str, Any]] = []  # [{id, time, uid, gid, prompt, preset, filename, size, model}]
+        self._recorded_image_hashes: set = set()  # 图片内容哈希去重  # [{id, time, uid, gid, prompt, preset, filename, size, model}]
         self.prompt_map: Dict[str, str] = {}
 
     async def initialize(self):
