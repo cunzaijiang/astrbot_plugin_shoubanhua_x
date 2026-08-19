@@ -1,4 +1,5 @@
 import re
+import hashlib
 import asyncio
 import json
 from datetime import datetime
@@ -218,6 +219,7 @@ class ShoubanhuaPlugin(Star):
         self._session_generated_images: Dict[str, List[bytes]] = {}  # session_id -> recent image bytes
         self._session_generated_images_lock = asyncio.Lock()
         self._session_generated_images_max = max(1, int(config.get("pdf_session_image_cache", 20)))
+        self._recorded_image_hashes: set = set()  # 图片内容哈希去重，防止画廊重复写入
 
         # 会话级最近图片上下文：同时记录用户发送的图片和 Bot 生成的图片，供“修改上面那张”这类追问使用
         self._session_recent_image_context: Dict[str, List[Dict[str, Any]]] = {}
@@ -1407,16 +1409,25 @@ class ShoubanhuaPlugin(Star):
         if not session_id or not isinstance(image_bytes, bytes) or len(image_bytes) == 0:
             return
 
-        # 写入全局持久化历史画廊
+        # 写入全局持久化历史画廊（按图片内容哈希去重，避免同一张图被重复写入）
         try:
-            await self.data_mgr.record_generated_image(
-                image_bytes=image_bytes,
-                uid=uid or session_id,
-                gid=gid,
-                prompt=prompt or "手办化生图",
-                preset_name=preset_name or "默认",
-                model=model
-            )
+            img_hash = hashlib.sha256(image_bytes).hexdigest()
+            if img_hash not in self._recorded_image_hashes:
+                self._recorded_image_hashes.add(img_hash)
+                # 限制哈希集合大小，防止内存无限增长
+                if len(self._recorded_image_hashes) > 500:
+                    # 保留最近 250 个哈希（粗略淘汰）
+                    self._recorded_image_hashes = set(list(self._recorded_image_hashes)[-250:])
+                await self.data_mgr.record_generated_image(
+                    image_bytes=image_bytes,
+                    uid=uid or session_id,
+                    gid=gid,
+                    prompt=prompt or "手办化生图",
+                    preset_name=preset_name or "默认",
+                    model=model
+                )
+            else:
+                logger.info(f"FigurinePro: 图片哈希 {img_hash[:16]}... 已存在于画廊记录中，跳过重复写入")
         except Exception as e:
             logger.error(f"写入历史画廊失败: {e}")
 
