@@ -1,0 +1,25 @@
+name: astrbot_plugin_shoubanhua
+display_name: 手办化x
+desc: 支持第三方所有OpenAI绘图格式和原生Google Gemini 终极缝合怪，文生图/图生图/人设写真，搭载Neo-Brutalism管理后台、高可用故障转移与画廊管理
+help: |
+  🎨 手办化x 插件 (v3.0.0)
+  
+  核心亮点：
+  - 🖥️ 搭载 Neo-Brutalism 独立 WebUI 控制台（仪表盘、画廊、Key池、配额管理）
+  - 🌐 多供应商高可用自动故障转移 (Failover) 与重试机制
+  - 🖼️ 极速异步 WebP 缩略图画廊 + 内置高清灯箱全屏预览
+  - 💾 智能存储容量监控与超限自动/手动安全清理
+  - ⚡ 真实生图 API 连通性测试与模型耗时监控
+  - 🧠 LLM 智能感知：自动识别文生图/图生图/人设写真与20轮上下文支持
+  
+  管理命令：
+  - #手办化帮助 - 查看详细帮助
+  - #手办化查询次数 - 查看剩余生图配额
+  - #手办化今日统计 - (管理员)查看今日调用榜
+version: v3.0.0
+author: shskjw
+repo: https://github.com/shskjw/astrbot_plugin_shoubanhua
+pages:
+  - name: shoubanhua
+    title: 手办化x
+

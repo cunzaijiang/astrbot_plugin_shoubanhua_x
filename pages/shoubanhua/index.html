@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>手办化x · 控制台</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="logo-wrapper">
+        <div class="logo-icon">🎨</div>
+        <div>
+          <span class="logo-title">手办化x</span>
+          <span class="logo-subtitle">v3.0.0 PRO NEO-UI</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="neo-badge green">SYSTEM ONLINE</span>
+        <button class="neo-btn white" id="testApiBtn" style="padding: 6px 12px; font-size: 12px;">⚡ 测试接口 (绘图测试)</button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="overview">📊 仪表盘概览</button>
+      <button class="tab-btn" data-tab="studio">🎨 生图工作台 (Studio)</button>
+      <button class="tab-btn" data-tab="presets">📋 预设管理 (Prompt)</button>
+      <button class="tab-btn" data-tab="config">⚙️ 插件配置 (Config)</button>
+      <button class="tab-btn" data-tab="providers">🌐 供应商与故障转移 (Providers)</button>
+      <button class="tab-btn" data-tab="keys">🔑 密钥池管理 (Key Pool)</button>
+      <button class="tab-btn" data-tab="quota">📈 额度与统计 (Quota)</button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- 1. Overview Tab -->
+      <section class="tab-pane active" id="tab-overview">
+        <div class="grid-4" style="margin-bottom: 24px;">
+          <div class="neo-box stat-card c-pink">
+            <div class="stat-label">今日活跃用户</div>
+            <div class="stat-val" id="statTodayUsers">0</div>
+          </div>
+          <div class="neo-box stat-card c-yellow">
+            <div class="stat-label">今日生图调用总数</div>
+            <div class="stat-val" id="statTodayCalls">0</div>
+          </div>
+          <div class="neo-box stat-card c-cyan">
+            <div class="stat-label">历史累计生成图片</div>
+            <div class="stat-val" id="statTotalImages">0</div>
+          </div>
+          <div class="neo-box stat-card c-green">
+            <div class="stat-label">图片占用容量 / 上限</div>
+            <div class="stat-val" id="statStorageSize" style="font-size: 24px;">0 MB</div>
+          </div>
+        </div>
+
+        <!-- 已生成图片历史画廊 (懒加载与自动清理控制) -->
+        <div class="neo-box" style="margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #000; padding-bottom: 12px; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <h3 style="font-weight: 900; margin: 0; font-size: 18px;">🖼️ 已生成图片画廊</h3>
+              <span class="neo-badge purple" id="galleryCountBadge">0 张</span>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <span style="font-size: 12px; font-weight: 800;" id="storageSummary">存储占用: 0 MB / 5 GB</span>
+              <button class="neo-btn pink" id="manualCleanup50Btn" style="padding: 6px 12px; font-size: 12px;">
+                🧹 清理 50% 最旧图片
+              </button>
+              <button class="neo-btn pink" id="manualCleanupAllBtn" style="padding: 6px 12px; font-size: 12px; background: #ff2a2a; color: #fff;">
+                🔥 全部清理 (100%)
+              </button>
+            </div>
+          </div>
+
+          <!-- Gallery Grid -->
+          <div id="galleryGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px;">
+            <!-- Rendered by JS -->
+          </div>
+
+          <!-- Loading / Empty States -->
+          <div id="galleryLoading" style="text-align: center; padding: 30px; font-weight: 900; display: none;">
+            ⏳ 正在加载历史图片...
+          </div>
+          <div id="galleryEmpty" style="text-align: center; padding: 40px; font-weight: 900; border: 2px dashed #000; display: none; background: #fff;">
+            暂无已生成的历史图片记录
+          </div>
+
+          <!-- Pagination -->
+          <div id="galleryPagination" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 12px;">
+            <button class="neo-btn white" id="prevPageBtn" style="padding: 6px 16px;">◀ 上一页</button>
+            <span style="font-weight: 900; font-size: 14px;" id="pageIndicator">第 1 / 1 页</span>
+            <button class="neo-btn white" id="nextPageBtn" style="padding: 6px 16px;">下一页 ▶</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Studio Workstation Tab -->
+      <section class="tab-pane" id="tab-studio">
+        <div class="studio-layout">
+          <!-- Left Control Panel -->
+          <div class="studio-panel">
+            <div class="neo-box">
+              <h3 style="font-weight: 900; margin-bottom: 12px;">🛠️ 生图参数设置</h3>
+              
+              <div class="form-group">
+                <label class="form-label">选择风格预设</label>
+                <select class="form-select" id="studioPresetSelect">
+                  <option value="">(无预设 / 自定义)</option>
+                  <option value="手办化" selected>手办化 (Figurine)</option>
+                  <option value="手办化2">手办化 2</option>
+                  <option value="手办化3">手办化 3</option>
+                  <option value="手办化4">手办化 4</option>
+                  <option value="手办化5">手办化 5</option>
+                  <option value="手办化6">手办化 6</option>
+                  <option value="Q版化">Q版化 (Chibi)</option>
+                  <option value="痛屋化">痛屋化</option>
+                  <option value="痛车化">痛车化</option>
+                  <option value="cos化">cos化 (Cosplay)</option>
+                  <option value="cos自拍">cos自拍</option>
+                  <option value="第一视角">第一视角 (POV-1)</option>
+                  <option value="第三视角">第三视角 (POV-3)</option>
+                  <option value="孤独的我">孤独的我</option>
+                  <option value="鬼图">鬼图风格</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">提示词 / 额外指令 (Prompt)</label>
+                <textarea class="form-textarea" id="studioPrompt" placeholder="输入你想生成的画面描述或额外规则，例如：可爱白发少女，带猫耳，4K 16:9"></textarea>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">覆盖模型 (选填)</label>
+                <input class="form-input" id="studioModelInput" placeholder="留空则使用默认配置模型" />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">输入参考图片 (图生图选填)</label>
+                <input type="file" id="studioFileInput" accept="image/*" style="display: none;" />
+                <button type="button" class="neo-btn white" style="width: 100%;" onclick="document.getElementById('studioFileInput').click()">
+                  📁 选择参考图片
+                </button>
+                <div id="studioUploadLabel" class="form-hint" style="font-weight: 700; margin-top: 4px;">未选择图片（留空为文生图）</div>
+                <img id="studioInputPreview" style="display: none; max-width: 100%; margin-top: 8px; border: 2px solid #000;" />
+              </div>
+
+              <button class="neo-btn" id="studioGenBtn" style="width: 100%; font-size: 16px; padding: 14px;">
+                ⚡ 立即生成图片 (Ctrl+Enter)
+              </button>
+            </div>
+          </div>
+
+          <!-- Right Preview Stage -->
+          <div class="studio-stage" id="studioStage">
+            <div class="stage-placeholder" id="stageEmpty">
+              <div class="icon">🖼️</div>
+              <div style="font-weight: 800; font-size: 18px;">工作台画板就绪</div>
+              <div style="font-size: 13px;">在左侧选择预设并点击生成，渲染结果将在此处展示</div>
+            </div>
+
+            <div class="stage-placeholder" id="stageLoading" style="display: none;">
+              <div class="icon" style="animation: spin 1s infinite linear;">⚙️</div>
+              <div style="font-weight: 800; font-size: 20px;">AI 正在绘制创作中...</div>
+              <div style="font-size: 13px;">正在向所配置的生图模型发起渲染请求，请稍候</div>
+            </div>
+
+            <div id="stageResult" style="display: none; width: 100%;">
+              <img id="stageResultImg" class="stage-img-preview" src="" alt="生成结果" />
+              <div id="stageResultMeta" style="margin-top: 12px; font-weight: 800; font-size: 13px;"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Presets Tab -->
+      <section class="tab-pane" id="tab-presets">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+          <input type="text" class="form-input" id="presetSearch" placeholder="🔍 搜索预设关键词..." style="max-width: 320px;" />
+          <button class="neo-btn pink" id="addPresetBtn">+ 新增自定义预设</button>
+        </div>
+
+        <div class="preset-grid" id="presetsGrid">
+          <!-- Preset Cards Rendered by JS -->
+        </div>
+      </section>
+
+      <!-- 4. Config Tab -->
+      <section class="tab-pane" id="tab-config">
+        <div class="grid-2">
+          <div class="neo-box">
+            <h3 style="font-weight: 900; margin-bottom: 14px; border-bottom: 2px solid #000; padding-bottom: 4px;">🌐 接口与模型设定</h3>
+            
+            <div class="form-group">
+              <label class="form-label">接口模式 (Interface Mode)</label>
+              <select class="form-select" id="cfgInterfaceMode">
+                <option value="openai_image">openai_image (官方/中转 DALL-E / Images 接口)</option>
+                <option value="openai_chat">openai_chat (ChatCompletions 格式)</option>
+                <option value="gemini_official">gemini_official (谷歌原生 Gemini 格式)</option>
+                <option value="custom_endpoint">custom_endpoint (自定义完整端点)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">API 基础地址 (Base URL)</label>
+              <input class="form-input" id="cfgBaseUrl" placeholder="例如: https://api.openai.com 或中转站地址" />
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">默认模型 (Model)</label>
+                <input class="form-input" id="cfgModel" placeholder="例如: nano-banana" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">文生图专用模型 (可选)</label>
+                <input class="form-input" id="cfgT2IModel" placeholder="留空则使用默认模型" />
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">默认画质分辨率</label>
+                <select class="form-select" id="cfgResolution">
+                  <option value="1K">1K (标准)</option>
+                  <option value="2K">2K (高清)</option>
+                  <option value="4K">4K (超清)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">文生图默认比例</label>
+                <select class="form-select" id="cfgAspectRatio">
+                  <option value="1:1">1:1 (方形)</option>
+                  <option value="4:3">4:3</option>
+                  <option value="16:9">16:9 (横版宽屏)</option>
+                  <option value="9:16">9:16 (手机竖屏)</option>
+                  <option value="3:4">3:4</option>
+                  <option value="2:3">2:3</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">请求超时时间 (秒)</label>
+              <input type="number" class="form-input" id="cfgTimeout" value="120" />
+            </div>
+
+            <div class="grid-2" style="margin-top: 12px;">
+              <div class="form-group">
+                <label class="form-label">历史图片存储上限 (GB)</label>
+                <input type="number" step="0.5" class="form-input" id="cfgStorageMaxGB" value="5.0" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">超限自动清理比例</label>
+                <select class="form-select" id="cfgCleanupRatio">
+                  <option value="0.3">清理 30% 最旧图片</option>
+                  <option value="0.5" selected>清理 50% 最旧图片</option>
+                  <option value="0.7">清理 70% 最旧图片</option>
+                  <option value="0.9">清理 90% 最旧图片</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="neo-box">
+            <h3 style="font-weight: 900; margin-bottom: 14px; border-bottom: 2px solid #000; padding-bottom: 4px;">🎛️ 特性与行为开关</h3>
+
+            <label class="switch-label">
+              <span>启用叛逆模式 (Rebellious Personality)</span>
+              <input type="checkbox" id="cfgRebellious" />
+            </label>
+
+            <label class="switch-label">
+              <span>启用 LLM 意图智能判断 (Smart Auto-Detect)</span>
+              <input type="checkbox" id="cfgLLMAutoDetect" />
+            </label>
+
+            <label class="switch-label">
+              <span>启用并发奢侈模式 (Luxury Multi-Request)</span>
+              <input type="checkbox" id="cfgLuxuryMode" />
+            </label>
+
+            <label class="switch-label">
+              <span>启用单用户调用次数限制</span>
+              <input type="checkbox" id="cfgUserLimit" />
+            </label>
+
+            <label class="switch-label">
+              <span>启用每日签到功能</span>
+              <input type="checkbox" id="cfgCheckin" />
+            </label>
+
+            <div class="form-group" style="margin-top: 14px;">
+              <label class="form-label">帮助文本 (Help Text)</label>
+              <textarea class="form-textarea" id="cfgHelpText" style="min-height: 120px;"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+          <button class="neo-btn green" id="saveConfigBtn" style="font-size: 16px; padding: 12px 28px;">
+            💾 保存并热重载所有配置
+          </button>
+        </div>
+      </section>
+
+      <!-- 4.5 Providers Tab (Multi-Provider Failover) -->
+      <section class="tab-pane" id="tab-providers">
+        <div class="neo-box" style="margin-bottom: 20px; background: var(--neo-yellow);">
+          <h3 style="font-weight: 900; margin-bottom: 8px;">🌐 多 API 供应商高可用与故障自动转移</h3>
+          <p style="font-size: 13px; font-weight: 700; color: #222;">
+            当主供应商发生网络超时、请求报错或达到失败重试阈值时，系统将<b>无缝自动切换</b>至备用供应商继续绘图，保障生图服务永不中断。
+          </p>
+          <div style="margin-top: 12px; display: flex; align-items: center; gap: 12px;">
+            <label style="font-weight: 900; font-size: 13px;">单个供应商失败重试切换阈值：</label>
+            <select class="form-select" id="cfgFailoverThreshold" style="width: 140px; padding: 4px 8px;">
+              <option value="1">失败 1 次即切换</option>
+              <option value="2">失败 2 次后切换</option>
+              <option value="3">失败 3 次后切换</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="neo-box" style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <h3 style="font-weight: 900;">📋 备用供应商列表 (Backup Providers)</h3>
+            <button class="neo-btn cyan" id="addBackupProviderBtn" style="padding: 6px 14px; font-size: 12px;">
+              ➕ 新增备用供应商
+            </button>
+          </div>
+          
+          <div id="backupProvidersContainer" style="display: flex; flex-direction: column; gap: 16px;">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end;">
+          <button class="neo-btn green" id="saveProvidersBtn" style="font-size: 16px; padding: 12px 28px;">
+            💾 保存供应商与容灾设置
+          </button>
+        </div>
+      </section>
+
+      <!-- 5. Keys Tab -->
+      <section class="tab-pane" id="tab-keys">
+        <div class="grid-2">
+          <div class="neo-box">
+            <h3 style="font-weight: 900; margin-bottom: 12px;">🔑 当前生效 Key 池</h3>
+            <div class="neo-table-wrap">
+              <table class="neo-table">
+                <thead>
+                  <tr>
+                    <th>序号</th>
+                    <th>Key 脱敏内容</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="keysTableBody">
+                  <!-- Keys Rendered by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="neo-box">
+            <h3 style="font-weight: 900; margin-bottom: 12px;">📝 批量编辑 API Keys</h3>
+            <div class="form-group">
+              <label class="form-label">每行填写一个 Key (自动轮询并发)</label>
+              <textarea class="form-textarea" id="keysRawTextarea" style="min-height: 240px; font-family: monospace;" placeholder="sk-xxxx1&#10;sk-xxxx2"></textarea>
+            </div>
+            <button class="neo-btn cyan" id="saveKeysBtn" style="width: 100%;">
+              更新保存 Key 池
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. Quota Tab -->
+      <section class="tab-pane" id="tab-quota">
+        <div class="grid-2">
+          <div class="neo-box">
+            <h3 style="font-weight: 900; margin-bottom: 12px;">👤 用户额度与调用排行</h3>
+            <div class="neo-table-wrap" style="max-height: 480px; overflow-y: auto;">
+              <table class="neo-table">
+                <thead>
+                  <tr>
+                    <th>用户 QQ</th>
+                    <th>剩余次数</th>
+                    <th>今日调用</th>
+                    <th>快捷充值</th>
+                  </tr>
+                </thead>
+                <tbody id="userQuotaTableBody">
+                  <!-- Users Quota List -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="neo-box">
+            <h3 style="font-weight: 900; margin-bottom: 12px;">👥 群聊配额与统计</h3>
+            <div class="neo-table-wrap" style="max-height: 480px; overflow-y: auto;">
+              <table class="neo-table">
+                <thead>
+                  <tr>
+                    <th>群号</th>
+                    <th>剩余次数</th>
+                    <th>今日调用</th>
+                    <th>快捷充值</th>
+                  </tr>
+                </thead>
+                <tbody id="groupQuotaTableBody">
+                  <!-- Group Quota List -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Image Lightbox Modal -->
+  <div class="neo-modal-overlay" id="imageLightboxModal" style="background: rgba(0, 0, 0, 0.88); z-index: 9999;">
+    <div style="position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+      <button type="button" class="neo-btn pink" id="closeLightboxBtn" style="position: absolute; top: -16px; right: -16px; padding: 4px 10px; font-size: 16px; font-weight: 900; z-index: 10000;">✕</button>
+      <img id="lightboxImg" src="" style="max-width: 85vw; max-height: 80vh; object-fit: contain; border: 4px solid #000; box-shadow: 8px 8px 0px #fff; background: #fff;" />
+      <div id="lightboxCaption" style="margin-top: 12px; color: #fff; font-weight: 800; font-size: 13px; text-align: center; background: #000; padding: 6px 16px; border: 2px solid #fff;"></div>
+    </div>
+  </div>
+
+  <!-- Confirm Dialog Modal -->
+  <div class="neo-modal-overlay" id="customConfirmModal" style="z-index: 10001;">
+    <div class="neo-modal" style="max-width: 380px;">
+      <div class="neo-modal-header">
+        <h3 style="font-weight: 900;" id="customConfirmTitle">⚠️ 确认操作</h3>
+      </div>
+      <div style="font-size: 14px; font-weight: 700; color: #333; margin-bottom: 20px;" id="customConfirmMsg">
+        确定执行此操作吗？
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="neo-btn white" id="customConfirmCancelBtn" style="padding: 6px 16px;">取消</button>
+        <button class="neo-btn pink" id="customConfirmOkBtn" style="padding: 6px 16px;">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for Preset Edit / Add -->
+  <div class="neo-modal-overlay" id="presetModal">
+    <div class="neo-modal">
+      <div class="neo-modal-header">
+        <h3 id="presetModalTitle" style="font-weight: 900;">新增/编辑预设</h3>
+        <button type="button" class="neo-btn white" id="closeModalBtn" style="padding: 2px 8px;">✕</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">预设名称 (触发指令)</label>
+        <input class="form-input" id="modalPresetName" placeholder="例如：赛博朋克化" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">对应提示词 (Prompt)</label>
+        <textarea class="form-textarea" id="modalPresetPrompt" style="min-height: 120px;" placeholder="完整的画面渲染提示词与风格约束..."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
+        <button class="neo-btn green" id="savePresetModalBtn">💾 确认保存预设</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bridge and App Script -->
+  <script src="./app.js"></script>
+</body>
+</html>
