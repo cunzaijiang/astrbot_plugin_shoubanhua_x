@@ -242,31 +242,60 @@
     return Math.round((parseFloat(ratio) || 0.5) * 100);
   }
 
+  let currentLightboxReqId = 0;
+
   window.previewImage = async function(filename, thumbUrl = '', caption = '') {
     const modal = document.getElementById('imageLightboxModal');
     const img = document.getElementById('lightboxImg');
     const cap = document.getElementById('lightboxCaption');
+    const spinner = document.getElementById('lightboxSpinner');
     if (!modal || !img) return;
 
-    // 先用已有的缩略图占位立即展开弹窗，避免等待
+    currentLightboxReqId++;
+    const thisReqId = currentLightboxReqId;
+
+    // 1. 毫秒级零延迟：先用已有缩略图直接展示 + 柔和毛玻璃滤镜占位
     if (thumbUrl) {
       img.src = thumbUrl;
+      img.style.filter = 'blur(4px)';
+    } else {
+      img.src = '';
+      img.style.filter = 'none';
     }
+
     if (cap) {
       cap.textContent = caption || '手办化生成图片预览';
       cap.style.display = caption ? 'inline-block' : 'none';
     }
+
+    if (spinner) {
+      spinner.style.display = 'flex';
+    }
+
     modal.classList.add('open');
 
-    // 异步加载高清原图
+    // 2. 异步流式拉取高清原图数据
     if (filename) {
       try {
         const res = await apiGet('gallery/raw', { filename });
-        if (res && res.data_uri) {
-          img.src = res.data_uri;
+        // 防止用户快速切换点开多张图时的竞态条件
+        if (thisReqId === currentLightboxReqId && res && res.data_uri) {
+          const fullImg = new Image();
+          fullImg.onload = () => {
+            if (thisReqId === currentLightboxReqId) {
+              img.src = res.data_uri;
+              img.style.filter = 'none';
+              if (spinner) spinner.style.display = 'none';
+            }
+          };
+          fullImg.src = res.data_uri;
         }
       } catch (e) {
         console.warn('加载高清原图失败，使用缩略图显示:', e);
+        if (thisReqId === currentLightboxReqId) {
+          img.style.filter = 'none';
+          if (spinner) spinner.style.display = 'none';
+        }
       }
     }
   };
