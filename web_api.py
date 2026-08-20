@@ -96,7 +96,7 @@ class WebApiHandler:
         return jsonify({
             "status": "ok",
             "data": {
-                "version": "3.0.0",
+                "version": "3.1.0",
                 "plugin_name": "astrbot_plugin_shoubanhua",
                 "display_name": "手办化x",
                 "interface_mode": current_mode,

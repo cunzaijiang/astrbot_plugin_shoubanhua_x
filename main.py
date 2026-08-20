@@ -104,7 +104,7 @@ _CLOTHING_KEYWORDS = [
     "astrbot_plugin_shoubanhua",
     "shskjw",
     "支持第三方所有OpenAI绘图格式和原生Google Gemini 终极缝合怪，文生图/图生图插件，支持LLM智能判断",
-    "2.9.2",
+    "3.1.0",
     "https://github.com/shskjw/astrbot_plugin_shoubanhua",
 )
 class ShoubanhuaPlugin(Star):
@@ -902,7 +902,7 @@ class ShoubanhuaPlugin(Star):
 
         auto_detect_status = "已启用" if self._llm_auto_detect else "未启用"
         logger.info(
-            f"手办化 插件已加载 v2.9.2 | LLM智能判断: {auto_detect_status} | 上下文轮数: {self._context_rounds}")
+            f"手办化 插件已加载 v3.1.0 | LLM智能判断: {auto_detect_status} | 上下文轮数: {self._context_rounds}")
 
     def is_admin(self, event: AstrMessageEvent) -> bool:
         sender_id = norm_id(event.get_sender_id())
