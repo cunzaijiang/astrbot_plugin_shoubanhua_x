@@ -44,6 +44,10 @@ class WebApiHandler:
             ("gallery/cleanup", self.handle_cleanup_gallery, ["POST"], "手动清理历史生成图片"),
             ("gallery/delete", self.handle_delete_single_image, ["POST"], "单张图片手动删除"),
             ("preset_image", self.handle_get_preset_image, ["GET"], "获取预设预览图"),
+            ("persona/config", self.handle_get_persona_config, ["GET"], "获取人设写真配置与参考图"),
+            ("persona/save", self.handle_save_persona_config, ["POST"], "保存人设写真配置"),
+            ("persona/upload_ref", self.handle_upload_persona_ref, ["POST"], "上传人设参考照片"),
+            ("persona/delete_ref", self.handle_delete_persona_ref, ["POST"], "删除人设参考照片"),
         ]
 
         for route_subpath, handler, methods, desc in routes:
@@ -601,3 +605,102 @@ class WebApiHandler:
                 return await send_file(demo_path, mimetype="image/png")
 
         return jsonify({"status": "error", "message": "暂无示意图"}), 404
+
+    async def handle_get_persona_config(self):
+        """获取人设写真配置与参考图列表 (Base64)"""
+        persona_name = self.plugin.conf.get("persona_name", "诺亚")
+        persona_desc = self.plugin.conf.get("persona_description", "")
+        photo_style = self.plugin.conf.get("persona_photo_style", "日常生活风格，自然光线，真实感")
+        default_prompt = self.plugin.conf.get("persona_default_prompt", "一张日常生活照片，自然的姿态和表情")
+        trigger_keywords = self.plugin.conf.get("persona_trigger_keywords", ["拍照", "自拍", "看看你"])
+        scene_prompts = self.plugin.conf.get("persona_scene_prompts", [
+            "咖啡店:在咖啡店里悠闲地喝咖啡",
+            "家里:在房间里的日常生活场景",
+            "公园:在公园里散步或休息",
+            "学校:在校园里的日常"
+        ])
+        enable_persona = self.plugin.conf.get("enable_persona_mode", True)
+
+        # 读取参考图列表
+        ref_images = []
+        if self.data_mgr.has_preset_ref_images("_persona_"):
+            paths = self.data_mgr.get_preset_ref_image_paths("_persona_")
+            for idx, p in enumerate(paths):
+                try:
+                    fpath = Path(p)
+                    if fpath.exists():
+                        b_data = fpath.read_bytes()
+                        b64 = base64.b64encode(b_data).decode("utf-8")
+                        ref_images.append({
+                            "index": idx,
+                            "filename": fpath.name,
+                            "url": f"data:image/png;base64,{b64}",
+                            "size_kb": round(len(b_data) / 1024, 1)
+                        })
+                except Exception as e:
+                    logger.error(f"读取人设参考图失败 {p}: {e}")
+
+        return jsonify({
+            "status": "ok",
+            "data": {
+                "enable_persona_mode": bool(enable_persona),
+                "persona_name": persona_name,
+                "persona_description": persona_desc,
+                "persona_photo_style": photo_style,
+                "persona_default_prompt": default_prompt,
+                "persona_trigger_keywords": trigger_keywords,
+                "persona_scene_prompts": scene_prompts,
+                "ref_images": ref_images
+            }
+        })
+
+    async def handle_save_persona_config(self):
+        """保存人设写真各项配置"""
+        data = await request.get_json(silent=True) or {}
+        fields = [
+            "enable_persona_mode", "persona_name", "persona_description",
+            "persona_photo_style", "persona_default_prompt",
+            "persona_trigger_keywords", "persona_scene_prompts"
+        ]
+        changed_keys = []
+        for field in fields:
+            if field in data:
+                self.plugin.conf[field] = data[field]
+                changed_keys.append(field)
+
+        self.plugin._save_config(changed_keys=changed_keys)
+        return jsonify({"status": "ok", "message": "人设配置已保存并热生效！"})
+
+    async def handle_upload_persona_ref(self):
+        """上传单张或多张人设参考图 (Base64)"""
+        data = await request.get_json(silent=True) or {}
+        image_base64 = data.get("image_base64", "")
+        if not image_base64:
+            return jsonify({"status": "error", "message": "未提供图片数据"}), 400
+
+        try:
+            # 清理 data URL 前缀
+            if "," in image_base64:
+                image_base64 = image_base64.split(",", 1)[1]
+            img_bytes = base64.b64decode(image_base64)
+            saved_name = await self.data_mgr.save_preset_ref_image("_persona_", img_bytes)
+            if not saved_name:
+                return jsonify({"status": "error", "message": "保存人设参考图失败"}), 500
+
+            return jsonify({"status": "ok", "message": "人设参考图上传成功！", "data": {"filename": saved_name}})
+        except Exception as e:
+            logger.error(f"处理人设图片上传异常: {e}")
+            return jsonify({"status": "error", "message": f"上传异常: {e}"}), 500
+
+    async def handle_delete_persona_ref(self):
+        """删除指定索引或文件名的人设参考图"""
+        data = await request.get_json(silent=True) or {}
+        index = data.get("index")
+        if index is None:
+            return jsonify({"status": "error", "message": "缺少图片索引"}), 400
+
+        success = await self.data_mgr.remove_preset_ref_image("_persona_", int(index))
+        if not success:
+            return jsonify({"status": "error", "message": "删除失败，图片可能不存在"}), 400
+
+        return jsonify({"status": "ok", "message": "人设参考图已删除！"})

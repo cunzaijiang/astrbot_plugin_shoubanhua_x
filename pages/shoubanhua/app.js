@@ -129,10 +129,10 @@
       loadOverview();
       loadGallery(1);
     }
+    if (tabId === 'persona') loadPersona();
     if (tabId === 'presets') loadPresets();
     if (tabId === 'config') loadConfig();
     if (tabId === 'providers') loadProviders();
-    if (tabId === 'keys') loadKeys();
     if (tabId === 'quota') loadQuota();
   }
 
@@ -387,7 +387,7 @@
       document.getElementById('cfgResolution').value = c.image_resolution || '1K';
       document.getElementById('cfgAspectRatio').value = c.image_aspect_ratio || '4:3';
       document.getElementById('cfgTimeout').value = c.timeout || 120;
-      document.getElementById('cfgStorageMaxGB').value = String(c.image_storage_max_gb || '5');
+      document.getElementById('cfgStorageMaxGB').value = c.image_storage_max_gb || 5.0;
       document.getElementById('cfgCleanupRatio').value = String(c.image_cleanup_ratio || 0.5);
       document.getElementById('cfgLuxuryMode').checked = !!c.enable_luxury_mode;
       document.getElementById('cfgRebellious').checked = !!c.enable_rebellious_mode;
@@ -395,6 +395,21 @@
       document.getElementById('cfgUserLimit').checked = !!c.enable_user_limit;
       document.getElementById('cfgCheckin').checked = !!c.enable_checkin;
       document.getElementById('cfgHelpText').value = c.help_text || '';
+
+      // Fill API Keys
+      const rawKeys = c.api_keys || '';
+      let keysStr = '';
+      let count = 0;
+      if (Array.isArray(rawKeys)) {
+        keysStr = rawKeys.join('\n');
+        count = rawKeys.length;
+      } else if (typeof rawKeys === 'string') {
+        keysStr = rawKeys;
+        count = rawKeys.split('\n').filter(k => k.trim()).length;
+      }
+      document.getElementById('keysRawTextarea').value = keysStr;
+      const countBadge = document.getElementById('configKeyCountBadge');
+      if (countBadge) countBadge.textContent = `${count} 个 Key`;
     } catch (e) {
       showToast('加载配置失败: ' + e.message, 'error');
     }
@@ -402,16 +417,20 @@
 
   async function saveConfig() {
     try {
+      const keysText = document.getElementById('keysRawTextarea').value;
+      const keysList = keysText.split('\n').map(k => k.trim()).filter(Boolean);
+
       const payload = {
         config: {
           interface_mode: document.getElementById('cfgInterfaceMode').value,
           base_url: document.getElementById('cfgBaseUrl').value.trim(),
+          api_keys: keysList.join('\n'),
           model: document.getElementById('cfgModel').value.trim(),
           text_to_image_model: document.getElementById('cfgT2IModel').value.trim(),
           image_resolution: document.getElementById('cfgResolution').value,
           image_aspect_ratio: document.getElementById('cfgAspectRatio').value,
           timeout: parseInt(document.getElementById('cfgTimeout').value) || 120,
-          image_storage_max_gb: document.getElementById('cfgStorageMaxGB').value,
+          image_storage_max_gb: parseFloat(document.getElementById('cfgStorageMaxGB').value) || 5.0,
           image_cleanup_ratio: parseFloat(document.getElementById('cfgCleanupRatio').value) || 0.5,
           enable_luxury_mode: document.getElementById('cfgLuxuryMode').checked,
           enable_rebellious_mode: document.getElementById('cfgRebellious').checked,
@@ -423,7 +442,8 @@
       };
 
       await apiPost('config/save', payload);
-      showToast('配置已成功保存并热重载！');
+      showToast('🎉 配置与 Key 池已成功保存并热重载！');
+      loadConfig();
     } catch (e) {
       showToast('保存配置失败: ' + e.message, 'error');
     }
@@ -559,45 +579,142 @@
     }
   }
 
-  // 4. Keys Tab
-  async function loadKeys() {
-    try {
-      const res = await apiGet('keys');
-      state.keys = res.keys || [];
-      
-      const tbody = document.getElementById('keysTableBody');
-      tbody.innerHTML = '';
-      if (state.keys.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;">暂无配置的 API Key</td></tr>';
-      } else {
-        state.keys.forEach((k, idx) => {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td><strong>#${idx + 1}</strong></td>
-            <td><code>${k.masked}</code></td>
-            <td>
-              <button class="neo-btn pink" style="padding:2px 8px;font-size:11px;" onclick="window.removeSingleKey(${idx})">删除</button>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
-      }
+  // 2.5 Persona Tab (Character Photos & Selfies)
+  let personaState = {
+    ref_images: []
+  };
 
-      document.getElementById('keysRawTextarea').value = state.keys.map(k => k.key).join('\n');
+  async function loadPersona() {
+    try {
+      const res = await apiGet('persona/config');
+      const data = res || {};
+      
+      document.getElementById('personaEnable').checked = data.enable_persona_mode !== false;
+      document.getElementById('personaName').value = data.persona_name || '';
+      document.getElementById('personaDesc').value = data.persona_description || '';
+      document.getElementById('personaStyle').value = data.persona_photo_style || '';
+      
+      const kws = data.persona_trigger_keywords;
+      document.getElementById('personaKeywords').value = Array.isArray(kws) ? kws.join(', ') : (kws || '');
+      
+      const scenes = data.persona_scene_prompts;
+      document.getElementById('personaScenes').value = Array.isArray(scenes) ? scenes.join('\n') : (scenes || '');
+
+      personaState.ref_images = data.ref_images || [];
+      renderPersonaPhotos();
     } catch (e) {
-      showToast('获取 API Key 失败: ' + e.message, 'error');
+      showToast('加载人设配置失败: ' + e.message, 'error');
     }
   }
 
-  async function saveKeys() {
+  function renderPersonaPhotos() {
+    const grid = document.getElementById('personaPhotosGrid');
+    const empty = document.getElementById('personaEmpty');
+    const badge = document.getElementById('personaRefBadge');
+    if (!grid) return;
+
+    badge.textContent = `${personaState.ref_images.length} 张`;
+    grid.innerHTML = '';
+
+    if (personaState.ref_images.length === 0) {
+      empty.style.display = 'block';
+      grid.style.display = 'none';
+      return;
+    }
+
+    empty.style.display = 'none';
+    grid.style.display = 'grid';
+
+    personaState.ref_images.forEach((img, idx) => {
+      const card = document.createElement('div');
+      card.style.position = 'relative';
+      card.style.border = '2px solid #000';
+      card.style.borderRadius = '4px';
+      card.style.overflow = 'hidden';
+      card.style.background = '#fff';
+      card.style.boxShadow = '2px 2px 0px #000';
+
+      card.innerHTML = `
+        <div style="aspect-ratio: 1; overflow: hidden; background: #eee; cursor: pointer;" onclick="window.viewPersonaPhoto(${idx})">
+          <img src="${img.url}" style="width: 100%; height: 100%; object-fit: cover;" alt="人设参考图 #${idx + 1}" />
+        </div>
+        <div style="padding: 6px; display: flex; justify-content: space-between; align-items: center; background: #fff; border-top: 2px solid #000;">
+          <span style="font-size: 11px; font-weight: 800;">#${idx + 1} (${img.size_kb || 0}KB)</span>
+          <button class="neo-btn pink" style="padding: 2px 6px; font-size: 10px;" onclick="window.deletePersonaPhoto(${idx})">🗑️</button>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+
+  window.viewPersonaPhoto = function(idx) {
+    const item = personaState.ref_images[idx];
+    if (item && item.url) {
+      const lightboxModal = document.getElementById('imageLightboxModal');
+      const lightboxImg = document.getElementById('lightboxImage');
+      const lightboxMeta = document.getElementById('lightboxMeta');
+      if (lightboxModal && lightboxImg) {
+        lightboxImg.src = item.url;
+        lightboxMeta.textContent = `人设参考照片 #${idx + 1} | 大小: ${item.size_kb || 0} KB`;
+        lightboxModal.classList.add('open');
+      }
+    }
+  };
+
+  window.deletePersonaPhoto = async function(idx) {
+    const ok = await showConfirm(`确定要删除这张人设参考照片 #${idx + 1} 吗？`, '🗑️ 删除人设参考图');
+    if (!ok) return;
+
     try {
-      const text = document.getElementById('keysRawTextarea').value;
-      const keys = text.split('\n').map(k => k.trim()).filter(Boolean);
-      await apiPost('keys/update', { keys });
-      showToast('API Key 池已保存！');
-      loadKeys();
+      await apiPost('persona/delete_ref', { index: idx });
+      showToast('人设参考照片已删除！');
+      loadPersona();
     } catch (e) {
-      showToast('更新 Key 失败: ' + e.message, 'error');
+      showToast('删除失败: ' + e.message, 'error');
+    }
+  };
+
+  async function handlePersonaFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const b64 = reader.result;
+      try {
+        showToast('正在上传人设参考图...');
+        await apiPost('persona/upload_ref', { image_base64: b64 });
+        showToast('🎉 人设参考照片上传成功！');
+        loadPersona();
+      } catch (err) {
+        showToast('上传失败: ' + err.message, 'error');
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+
+  async function savePersonaConfig() {
+    try {
+      const kwsRaw = document.getElementById('personaKeywords').value;
+      const kwsList = kwsRaw.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
+
+      const scenesRaw = document.getElementById('personaScenes').value;
+      const scenesList = scenesRaw.split('\n').map(s => s.trim()).filter(Boolean);
+
+      const payload = {
+        enable_persona_mode: document.getElementById('personaEnable').checked,
+        persona_name: document.getElementById('personaName').value.trim(),
+        persona_description: document.getElementById('personaDesc').value.trim(),
+        persona_photo_style: document.getElementById('personaStyle').value.trim(),
+        persona_trigger_keywords: kwsList,
+        persona_scene_prompts: scenesList
+      };
+
+      await apiPost('persona/save', payload);
+      showToast('🎉 人设写真配置已成功保存！');
+    } catch (e) {
+      showToast('保存人设配置失败: ' + e.message, 'error');
     }
   }
 
@@ -794,11 +911,14 @@
       if (state.galleryPage < state.galleryTotalPages) loadGallery(state.galleryPage + 1);
     });
 
-    // Config & Key actions
+    // Persona actions
+    document.getElementById('savePersonaBtn')?.addEventListener('click', savePersonaConfig);
+    document.getElementById('personaFileInput')?.addEventListener('change', handlePersonaFileUpload);
+
+    // Config & Provider actions
     document.getElementById('saveConfigBtn')?.addEventListener('click', saveConfig);
     document.getElementById('saveProvidersBtn')?.addEventListener('click', saveProviders);
     document.getElementById('addBackupProviderBtn')?.addEventListener('click', addBackupProviderItem);
-    document.getElementById('saveKeysBtn')?.addEventListener('click', saveKeys);
     document.getElementById('testApiBtn')?.addEventListener('click', async () => {
       const btn = document.getElementById('testApiBtn');
       const origText = btn.innerHTML;
