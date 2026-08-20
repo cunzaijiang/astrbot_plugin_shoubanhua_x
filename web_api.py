@@ -143,6 +143,9 @@ class WebApiHandler:
 
         changed_keys = []
         for k, v in config_patch.items():
+            # 兼容 AstrBot schema 格式要求
+            if k == "image_storage_max_gb":
+                v = str(int(float(v))) if isinstance(v, (int, float, str)) and str(v).strip() else "5"
             self.plugin.conf[k] = v
             changed_keys.append(k)
 
