@@ -165,10 +165,16 @@ class WebApiHandler:
         user_prompts = getattr(self.data_mgr, "user_prompts", {})
         preset_ref_images = getattr(self.data_mgr, "preset_ref_images", {})
 
+        hardcoded_builtin = {
+            "手办化", "手办化2", "手办化3", "手办化4", "手办化5", "手办化6",
+            "Q版化", "痛屋化", "痛屋化2", "痛车化", "cos化", "cos自拍",
+            "孤独的我", "第三视角", "鬼图", "第一视角"
+        }
+
         for name, prompt_text in self.data_mgr.prompt_map.items():
-            is_builtin = (prompt_text == "[内置预设]")
+            is_builtin = name in hardcoded_builtin
             real_prompt = prompt_text
-            if is_builtin:
+            if prompt_text == "[内置预设]":
                 # 获取内置对应的提示词
                 real_prompt = self.plugin._get_builtin_preset_prompt(name) if hasattr(self.plugin, "_get_builtin_preset_prompt") else "【内置系统级预设提示词】"
 
@@ -206,17 +212,41 @@ class WebApiHandler:
         return jsonify({"status": "ok", "message": f"预设 [{name}] 保存成功"})
 
     async def handle_delete_preset(self):
-        """删除自定义预设"""
+        """删除自定义预设（包括 user_prompts 与 prompt_list 配置）"""
         data = await request.get_json(silent=True) or {}
         name = str(data.get("name", "")).strip()
         if not name:
             return jsonify({"status": "error", "message": "未指定预设名"}), 400
 
-        if name not in self.data_mgr.user_prompts:
-            return jsonify({"status": "error", "message": f"预设 [{name}] 为内置预设或不存在，无法删除"}), 400
+        # 系统硬编码核心内置预设（不可删除）
+        hardcoded_builtin = {
+            "手办化", "手办化2", "手办化3", "手办化4", "手办化5", "手办化6",
+            "Q版化", "痛屋化", "痛屋化2", "痛车化", "cos化", "cos自拍",
+            "孤独的我", "第三视角", "鬼图", "第一视角"
+        }
+        if name in hardcoded_builtin:
+            return jsonify({"status": "error", "message": f"预设 [{name}] 为系统核心内置预设，无法删除"}), 400
 
-        del self.data_mgr.user_prompts[name]
-        await self.data_mgr._save_json(self.data_mgr.user_prompts_file, self.data_mgr.user_prompts)
+        deleted = False
+
+        # 1. 尝试从 user_prompts 中删除
+        if hasattr(self.data_mgr, "user_prompts") and name in self.data_mgr.user_prompts:
+            del self.data_mgr.user_prompts[name]
+            await self.data_mgr._save_json(self.data_mgr.user_prompts_file, self.data_mgr.user_prompts)
+            deleted = True
+
+        # 2. 尝试从 config.prompt_list 中删除
+        prompt_list = self.plugin.conf.get("prompt_list", [])
+        if isinstance(prompt_list, list):
+            new_list = [item for item in prompt_list if not (item.startswith(f"{name}:") or item.strip() == name)]
+            if len(new_list) != len(prompt_list):
+                self.plugin.conf["prompt_list"] = new_list
+                self.plugin._save_config(changed_keys=["prompt_list"])
+                deleted = True
+
+        if not deleted:
+            return jsonify({"status": "error", "message": f"预设 [{name}] 不存在或无法删除"}), 400
+
         self.data_mgr.reload_prompts()
 
         # 清理可能存在的参考图与预览图
@@ -226,7 +256,7 @@ class WebApiHandler:
         except Exception:
             pass
 
-        return jsonify({"status": "ok", "message": f"预设 [{name}] 已删除"})
+        return jsonify({"status": "ok", "message": f"预设 [{name}] 已成功删除！"})
 
     async def handle_get_keys(self):
         """获取当前配置的 API Key 列表"""
