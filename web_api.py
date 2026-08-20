@@ -91,6 +91,7 @@ class WebApiHandler:
         base_url = self.plugin.conf.get("base_url", "")
 
         storage_stats = self.data_mgr.get_generated_storage_stats()
+        max_gb = float(self.plugin.conf.get("image_storage_max_gb", 5.0) or 5.0)
 
         return jsonify({
             "status": "ok",
@@ -104,6 +105,7 @@ class WebApiHandler:
                 "base_url": base_url,
                 "today": today_str,
                 "storage": storage_stats,
+                "max_gb": max_gb,
                 "stats": {
                     "today_users": daily_users,
                     "today_groups": daily_groups,

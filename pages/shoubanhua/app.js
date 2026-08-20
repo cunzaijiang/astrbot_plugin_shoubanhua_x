@@ -146,7 +146,7 @@
       
       const sizeMb = data.storage?.size_mb || 0;
       const sizeGb = data.storage?.size_gb || 0;
-      const maxGb = state.config?.image_storage_max_gb || 5.0;
+      const maxGb = Number.isFinite(Number(data.max_gb)) ? Number(data.max_gb) : 5.0;
       document.getElementById('statStorageSize').textContent = `${sizeMb > 1024 ? sizeGb + ' GB' : sizeMb + ' MB'} / ${maxGb}GB`;
     } catch (e) {
       console.error('加载概览指标失败:', e);
@@ -195,26 +195,29 @@
         card.style.flexDirection = 'column';
         card.style.background = '#fff';
 
-        const userTag = item.gid ? `群 ${item.gid} · ${item.uid}` : `私聊 · ${item.uid}`;
-        const captionText = `${item.preset || '默认'} | ${item.uid} | ${item.time || ''}`;
+        const rawUid = String(item.uid || '');
+        const legacyGroupMatch = !item.gid ? rawUid.match(/^[^:]+:GroupMessage:(.+)$/) : null;
+        const displayGid = item.gid || legacyGroupMatch?.[1] || '';
+        const displayUid = legacyGroupMatch ? '未知用户' : rawUid;
+        const userTag = displayGid ? `群 ${displayGid} · ${displayUid}` : `私聊 · ${displayUid}`;
+        const previewItem = { ...item, displayGid, displayUid, userTag };
 
         card.innerHTML = `
           <div style="position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; border: 2px solid #000; background: #eee; margin-bottom: 8px;">
-            <img 
+            <img
               loading="lazy"
-              src="${item.url}" 
-              alt="Generated" 
+              src="${item.url}"
+              alt="${item.preset || '手办化'}生成图片"
               style="width: 100%; height: 100%; object-fit: cover; cursor: pointer; transition: transform 0.2s;"
-              onclick="window.previewImage('${item.filename}', '${item.url}', '${captionText.replace(/'/g, "\\'")}')"
-              onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\'><rect fill=\\'%23eee\\' width=\\'100\\' height=\\'100\\'/><text x=\\'50%\\' y=\\'50%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'12\\'>已清理</text></svg>'"
             />
             <span class="neo-badge pink" style="position: absolute; top: 4px; left: 4px; font-size: 10px; padding: 1px 4px;">
               ${item.preset || '自定义'}
             </span>
-            <button 
+            <button
+              type="button"
               title="删除此张图片"
-              style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: #fff; border: 1px solid #000; border-radius: 4px; cursor: pointer; font-size: 11px; padding: 2px 5px;"
-              onclick="event.stopPropagation(); window.deleteSingleImage('${item.filename}')">
+              aria-label="删除图片 ${item.filename || ''}"
+              style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: #fff; border: 1px solid #000; border-radius: 4px; cursor: pointer; font-size: 11px; padding: 2px 5px;">
               🗑️
             </button>
           </div>
@@ -229,6 +232,26 @@
             <span>${item.size_kb} KB</span>
           </div>
         `;
+
+        const image = card.querySelector('img');
+        const deleteButton = card.querySelector('button');
+        image?.addEventListener('click', () => openImagePreview({ kind: 'gallery', item: previewItem }, image));
+        image?.setAttribute('tabindex', '0');
+        image?.setAttribute('role', 'button');
+        image?.setAttribute('aria-label', '查看图片与完整生成信息');
+        image?.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openImagePreview({ kind: 'gallery', item: previewItem }, image);
+          }
+        });
+        image?.addEventListener('error', () => {
+          image.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect fill='%23eee' width='100' height='100'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='12'>已清理</text></svg>";
+        }, { once: true });
+        deleteButton?.addEventListener('click', (event) => {
+          event.stopPropagation();
+          window.deleteSingleImage(item.filename);
+        });
         grid.appendChild(card);
       });
     } catch (e) {
@@ -243,61 +266,193 @@
   }
 
   let currentLightboxReqId = 0;
+  let activePreview = null;
+  let lightboxReturnFocus = null;
 
-  window.previewImage = async function(filename, thumbUrl = '', caption = '') {
+  function setMetaRows(container, rows) {
+    if (!container) return;
+    container.innerHTML = '';
+    rows.filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '').forEach(([label, value]) => {
+      const term = document.createElement('dt');
+      const detail = document.createElement('dd');
+      term.textContent = label;
+      detail.textContent = String(value);
+      container.append(term, detail);
+    });
+  }
+
+  function getLightboxFocusableElements() {
     const modal = document.getElementById('imageLightboxModal');
-    const img = document.getElementById('lightboxImg');
-    const cap = document.getElementById('lightboxCaption');
-    const spinner = document.getElementById('lightboxSpinner');
-    if (!modal || !img) return;
+    if (!modal) return [];
+    return [...modal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter(element => element.offsetParent !== null);
+  }
+
+  function closeImagePreview() {
+    const modal = document.getElementById('imageLightboxModal');
+    if (!modal?.classList.contains('open')) return;
 
     currentLightboxReqId++;
-    const thisReqId = currentLightboxReqId;
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('preview-open');
+    activePreview = null;
 
-    // 1. 毫秒级零延迟：先用已有缩略图直接展示 + 柔和毛玻璃滤镜占位
-    if (thumbUrl) {
-      img.src = thumbUrl;
-      img.style.filter = 'blur(4px)';
+    const returnFocus = lightboxReturnFocus;
+    lightboxReturnFocus = null;
+    if (returnFocus && typeof returnFocus.focus === 'function' && document.contains(returnFocus)) {
+      returnFocus.focus();
+    }
+  }
+
+  async function loadPreviewRawImage(filename, requestId) {
+    const img = document.getElementById('lightboxImg');
+    const spinner = document.getElementById('lightboxSpinner');
+    if (!filename || !img) return;
+
+    try {
+      const res = await apiGet('gallery/raw', { filename });
+      if (requestId !== currentLightboxReqId || !res?.data_uri) return;
+
+      const fullImg = new Image();
+      fullImg.onload = () => {
+        if (requestId !== currentLightboxReqId) return;
+        img.src = res.data_uri;
+        img.style.filter = 'none';
+        img.style.opacity = '1';
+        if (spinner) spinner.style.display = 'none';
+      };
+      fullImg.onerror = () => {
+        if (requestId !== currentLightboxReqId) return;
+        img.style.filter = 'none';
+        img.style.opacity = '1';
+        if (spinner) spinner.style.display = 'none';
+      };
+      fullImg.src = res.data_uri;
+    } catch (e) {
+      console.warn('加载高清原图失败，使用缩略图显示:', e);
+      if (requestId === currentLightboxReqId) {
+        img.style.filter = 'none';
+        img.style.opacity = '1';
+        if (spinner) spinner.style.display = 'none';
+      }
+    }
+  }
+
+  function openImagePreview(preview, triggerElement = null) {
+    const modal = document.getElementById('imageLightboxModal');
+    const img = document.getElementById('lightboxImg');
+    const title = document.getElementById('lightboxTitle');
+    const caption = document.getElementById('lightboxCaption');
+    const prompt = document.getElementById('lightboxPrompt');
+    const typeBadge = document.getElementById('lightboxTypeBadge');
+    const spinner = document.getElementById('lightboxSpinner');
+    const generationMeta = document.getElementById('lightboxGenerationMeta');
+    const fileMeta = document.getElementById('lightboxFileMeta');
+    const copyButton = document.getElementById('lightboxCopyPromptBtn');
+    const deleteButton = document.getElementById('lightboxDeleteBtn');
+    if (!modal || !img || !preview) return;
+
+    currentLightboxReqId++;
+    const requestId = currentLightboxReqId;
+    activePreview = preview;
+    lightboxReturnFocus = triggerElement || document.activeElement;
+
+    if (preview.kind === 'gallery') {
+      const item = preview.item || {};
+      const fullPrompt = String(item.prompt || '');
+      const titleText = item.preset ? `${item.preset} · 生成图片` : '手办化生成图片';
+      const originText = item.userTag || (item.gid ? `群 ${item.gid} · ${item.uid || '未知用户'}` : `私聊 · ${item.uid || '未知用户'}`);
+
+      if (typeBadge) typeBadge.textContent = 'GALLERY';
+      if (title) title.textContent = titleText;
+      if (caption) caption.textContent = originText;
+      if (prompt) prompt.textContent = fullPrompt || '暂无提示词';
+      if (copyButton) copyButton.style.display = fullPrompt ? '' : 'none';
+      if (deleteButton) deleteButton.style.display = item.filename ? '' : 'none';
+
+      setMetaRows(generationMeta, [
+        ['会话来源', item.displayGid || item.gid ? '群聊' : '私聊'],
+        ['用户 ID', item.displayUid || item.uid || '未知用户'],
+        ['群 ID', item.displayGid || item.gid || '—'],
+        ['预设', item.preset || '自定义'],
+        ['模型', item.model || '未记录'],
+        ['生成时间', item.time || '未记录'],
+      ]);
+      setMetaRows(fileMeta, [
+        ['文件名', item.filename || '未记录'],
+        ['文件大小', Number.isFinite(Number(item.size_kb)) ? `${item.size_kb} KB` : '未记录'],
+        ['记录 ID', item.id || '未记录'],
+      ]);
+
+      img.src = item.url || '';
+      img.alt = `${titleText}，${originText}`;
+      img.style.filter = item.url ? 'blur(4px)' : 'none';
+      img.style.opacity = item.url ? '0.92' : '1';
+      if (spinner) spinner.style.display = item.filename ? 'flex' : 'none';
+      if (item.filename) loadPreviewRawImage(item.filename, requestId);
     } else {
-      img.src = '';
+      const item = preview.item || {};
+      if (typeBadge) typeBadge.textContent = 'PERSONA';
+      if (title) title.textContent = preview.title || '人设参考照片';
+      if (caption) caption.textContent = 'Persona Reference · 人设参考图';
+      if (prompt) prompt.textContent = '该图片为人设参考照片，不包含生成提示词。';
+      if (copyButton) copyButton.style.display = 'none';
+      if (deleteButton) deleteButton.style.display = 'none';
+      setMetaRows(generationMeta, [
+        ['类型', '人设参考照片'],
+        ['序号', preview.index !== undefined ? `#${preview.index + 1}` : '—'],
+      ]);
+      setMetaRows(fileMeta, [
+        ['文件大小', Number.isFinite(Number(item.size_kb)) ? `${item.size_kb} KB` : '未记录'],
+      ]);
+      img.src = item.url || '';
+      img.alt = preview.title || '人设参考照片';
       img.style.filter = 'none';
-    }
-
-    if (cap) {
-      cap.textContent = caption || '手办化生成图片预览';
-      cap.style.display = caption ? 'inline-block' : 'none';
-    }
-
-    if (spinner) {
-      spinner.style.display = 'flex';
+      img.style.opacity = '1';
+      if (spinner) spinner.style.display = 'none';
     }
 
     modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('preview-open');
+    requestAnimationFrame(() => document.getElementById('closeLightboxBtn')?.focus());
+  }
 
-    // 2. 异步流式拉取高清原图数据
-    if (filename) {
-      try {
-        const res = await apiGet('gallery/raw', { filename });
-        // 防止用户快速切换点开多张图时的竞态条件
-        if (thisReqId === currentLightboxReqId && res && res.data_uri) {
-          const fullImg = new Image();
-          fullImg.onload = () => {
-            if (thisReqId === currentLightboxReqId) {
-              img.src = res.data_uri;
-              img.style.filter = 'none';
-              if (spinner) spinner.style.display = 'none';
-            }
-          };
-          fullImg.src = res.data_uri;
-        }
-      } catch (e) {
-        console.warn('加载高清原图失败，使用缩略图显示:', e);
-        if (thisReqId === currentLightboxReqId) {
-          img.style.filter = 'none';
-          if (spinner) spinner.style.display = 'none';
-        }
+  async function copyPreviewPrompt() {
+    const text = activePreview?.kind === 'gallery' ? String(activePreview.item?.prompt || '') : '';
+    if (!text) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
       }
+      showToast('完整提示词已复制');
+    } catch (e) {
+      showToast('复制失败，请手动选择提示词', 'error');
     }
+  }
+
+  window.previewImage = function(filename, thumbUrl = '', caption = '') {
+    openImagePreview({
+      kind: 'gallery',
+      item: {
+        filename,
+        url: thumbUrl,
+        prompt: '',
+        preset: caption || '手办化',
+        userTag: caption,
+      }
+    });
   };
 
   window.deleteSingleImage = async function(filename) {
@@ -308,8 +463,10 @@
       showToast('图片已删除');
       loadOverview();
       loadGallery(state.galleryPage);
+      return true;
     } catch (e) {
       showToast('删除失败: ' + e.message, 'error');
+      return false;
     }
   };
 
@@ -634,30 +791,53 @@
       card.style.background = '#fff';
       card.style.boxShadow = '2px 2px 0px #000';
 
-      card.innerHTML = `
-        <div style="aspect-ratio: 1; overflow: hidden; background: #eee; cursor: pointer;" onclick="window.viewPersonaPhoto(${idx})">
-          <img src="${img.url}" style="width: 100%; height: 100%; object-fit: cover;" alt="人设参考图 #${idx + 1}" />
-        </div>
-        <div style="padding: 6px; display: flex; justify-content: space-between; align-items: center; background: #fff; border-top: 2px solid #000;">
-          <span style="font-size: 11px; font-weight: 800;">#${idx + 1} (${img.size_kb || 0}KB)</span>
-          <button class="neo-btn pink" style="padding: 2px 6px; font-size: 10px;" onclick="window.deletePersonaPhoto(${idx})">🗑️</button>
-        </div>
-      `;
+      const mediaButton = document.createElement('button');
+      mediaButton.type = 'button';
+      mediaButton.style.cssText = 'display:block; width:100%; padding:0; border:0; aspect-ratio:1; overflow:hidden; background:#eee; cursor:pointer;';
+      mediaButton.setAttribute('aria-label', `查看人设参考照片 #${idx + 1}`);
+
+      const photo = document.createElement('img');
+      photo.src = img.url;
+      photo.alt = `人设参考图 #${idx + 1}`;
+      photo.style.cssText = 'width:100%; height:100%; object-fit:cover; display:block;';
+      mediaButton.appendChild(photo);
+      mediaButton.addEventListener('click', () => openImagePreview({
+        kind: 'persona',
+        item: img,
+        index: idx,
+        title: `人设参考照片 #${idx + 1}`,
+      }, mediaButton));
+
+      const footer = document.createElement('div');
+      footer.style.cssText = 'padding:6px; display:flex; justify-content:space-between; align-items:center; background:#fff; border-top:2px solid #000;';
+
+      const label = document.createElement('span');
+      label.style.cssText = 'font-size:11px; font-weight:800;';
+      label.textContent = `#${idx + 1} (${img.size_kb || 0}KB)`;
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'neo-btn pink';
+      deleteButton.style.cssText = 'padding:2px 6px; font-size:10px;';
+      deleteButton.setAttribute('aria-label', `删除人设参考照片 #${idx + 1}`);
+      deleteButton.textContent = '🗑️';
+      deleteButton.addEventListener('click', () => window.deletePersonaPhoto(idx));
+
+      footer.append(label, deleteButton);
+      card.append(mediaButton, footer);
       grid.appendChild(card);
     });
   }
 
   window.viewPersonaPhoto = function(idx) {
     const item = personaState.ref_images[idx];
-    if (item && item.url) {
-      const lightboxModal = document.getElementById('imageLightboxModal');
-      const lightboxImg = document.getElementById('lightboxImage');
-      const lightboxMeta = document.getElementById('lightboxMeta');
-      if (lightboxModal && lightboxImg) {
-        lightboxImg.src = item.url;
-        lightboxMeta.textContent = `人设参考照片 #${idx + 1} | 大小: ${item.size_kb || 0} KB`;
-        lightboxModal.classList.add('open');
-      }
+    if (item?.url) {
+      openImagePreview({
+        kind: 'persona',
+        item,
+        index: idx,
+        title: `人设参考照片 #${idx + 1}`,
+      }, document.activeElement);
     }
   };
 
@@ -957,12 +1137,40 @@
     });
 
     // Lightbox & Confirm Modal Events
-    document.getElementById('closeLightboxBtn')?.addEventListener('click', () => {
-      document.getElementById('imageLightboxModal')?.classList.remove('open');
+    document.getElementById('closeLightboxBtn')?.addEventListener('click', closeImagePreview);
+    document.getElementById('lightboxDoneBtn')?.addEventListener('click', closeImagePreview);
+    document.getElementById('lightboxCopyPromptBtn')?.addEventListener('click', copyPreviewPrompt);
+    document.getElementById('lightboxDeleteBtn')?.addEventListener('click', async () => {
+      const filename = activePreview?.kind === 'gallery' ? activePreview.item?.filename : '';
+      if (!filename) return;
+      const deleted = await window.deleteSingleImage(filename);
+      if (deleted) closeImagePreview();
     });
     document.getElementById('imageLightboxModal')?.addEventListener('click', (e) => {
-      if (e.target.id === 'imageLightboxModal') {
-        document.getElementById('imageLightboxModal')?.classList.remove('open');
+      if (e.target.id === 'imageLightboxModal') closeImagePreview();
+    });
+    document.addEventListener('keydown', (e) => {
+      const modal = document.getElementById('imageLightboxModal');
+      if (!modal?.classList.contains('open')) return;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeImagePreview();
+        return;
+      }
+
+      if (e.key === 'Tab') {
+        const focusable = getLightboxFocusableElements();
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     });
 
