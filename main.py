@@ -792,34 +792,12 @@ class ShoubanhuaPlugin(Star):
         if removed_from_runtime > 0:
             logger.info(f"FigurinePro: 已从运行时配置中清理 {removed_from_runtime} 个废弃强力模式字段")
 
-        # 尝试加载动态配置备份。
-        # 遵循万象绘卷机制：对比官方主配置文件与 dynamic_config.json 的修改时间 (mtime)，谁最新以谁为准
+        # 尝试加载动态配置备份。命令改动过的字段需要覆盖 schema 默认值，
+        # 但面板里已经保存的新配置要优先，避免地址/Key 被旧备份盖回去。
         import os
         import json
         config_path = os.path.join(StarTools.get_data_dir(), "dynamic_config.json")
-        
-        # 获取官方配置文件路径与修改时间
-        astrbot_config_path = getattr(self.conf, "config_path", None)
-        if not astrbot_config_path:
-            base_data = StarTools.get_data_dir()
-            data_root = os.path.dirname(os.path.normpath(base_data))
-            candidate_cfg = os.path.join(data_root, "config", "astrbot_plugin_shoubanhua_config.json")
-            if os.path.exists(candidate_cfg):
-                astrbot_config_path = candidate_cfg
-
-        native_mtime = os.path.getmtime(astrbot_config_path) if astrbot_config_path and os.path.exists(astrbot_config_path) else 0
-        dynamic_mtime = os.path.getmtime(config_path) if os.path.exists(config_path) else 0
-
-        # 如果官方配置文件修改时间更新，说明用户在官方控制台直接修改过，以官方配置优先，并同步刷新 dynamic_config.json
-        if native_mtime >= dynamic_mtime and native_mtime > 0:
-            try:
-                # 规范化同步 dynamic_config.json
-                if os.path.exists(config_path):
-                    self._save_config()
-                logger.info("FigurinePro: 检测到官方主配置文件较新，优先加载官方配置")
-            except Exception as e:
-                logger.warning(f"FigurinePro: 同步最新主配置失败: {e}")
-        elif os.path.exists(config_path):
+        if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     dynamic_conf = json.load(f)
@@ -843,12 +821,13 @@ class ShoubanhuaPlugin(Star):
                     keys_to_restore = [k for k in override_keys if k in dynamic_keys]
                     active_override_keys = set(keys_to_restore)
                 else:
+                    # 兼容旧版 dynamic_config.json：没有元数据时，只恢复命令可能改动过的字段。
                     keys_to_restore = [k for k in dynamic_conf.keys() if k in dynamic_keys]
                     active_override_keys = set()
                     dynamic_backup_changed = True
 
                 schema_defaults = self._get_schema_defaults()
-                dynamic_backup_is_newer = True
+                dynamic_backup_is_newer = self._is_dynamic_backup_newer_than_config(config_path)
                 restored_keys = []
                 skip_reasons: Dict[str, int] = {}
                 for k in keys_to_restore:
@@ -947,7 +926,6 @@ class ShoubanhuaPlugin(Star):
         return bot_id or ""
 
     def _save_config(self, changed_keys: Optional[List[str]] = None):
-        """双向原子持久化配置：同时保存至 AstrBot 官方 config 文件与插件本地持久化文件"""
         try:
             self._purge_deprecated_config_keys()
 
@@ -955,7 +933,7 @@ class ShoubanhuaPlugin(Star):
             import json
             import uuid
 
-            # 1. 尝试通过 AstrBot 原生接口保存
+            # 尝试 AstrBot 原生配置保存
             saved = False
             try:
                 if hasattr(self.conf, "save") and callable(self.conf.save):
@@ -965,31 +943,24 @@ class ShoubanhuaPlugin(Star):
                     self.context.save_config(self.conf)
                     saved = True
             except Exception as e:
-                logger.warning(f"FigurinePro: AstrBot 原生配置接口保存失败，将直接执行物理文件写入: {e}")
+                logger.warning(f"FigurinePro: AstrBot 原生配置保存失败: {e}")
 
-            # 2. 物理写入 AstrBot 官方主配置文件 (确保官方面板和 AstrBot 重启时读取到最新值)
+            # 双向写入 AstrBot 官方 config 物理文件
             try:
-                astrbot_config_path = getattr(self.conf, "config_path", None)
-                if not astrbot_config_path:
-                    # 尝试推导默认 AstrBot 配置路径
-                    base_data = StarTools.get_data_dir() # plugin_data 目录
-                    data_root = os.path.dirname(os.path.normpath(base_data))
-                    candidate_cfg = os.path.join(data_root, "config", "astrbot_plugin_shoubanhua_config.json")
-                    if os.path.exists(candidate_cfg):
-                        astrbot_config_path = candidate_cfg
-
-                if astrbot_config_path and os.path.exists(os.path.dirname(astrbot_config_path)):
+                base_data = StarTools.get_data_dir()
+                data_root = os.path.dirname(os.path.normpath(base_data))
+                candidate_cfg = os.path.join(data_root, "config", "astrbot_plugin_shoubanhua_config.json")
+                if os.path.exists(os.path.dirname(candidate_cfg)):
                     conf_dict = dict(self.conf)
-                    tmp_native = f"{astrbot_config_path}.{uuid.uuid4().hex}.tmp"
-                    with open(tmp_native, "w", encoding="utf-8") as f:
-                        json.dump(conf_dict, f, ensure_ascii=False, indent=2)
-                    os.replace(tmp_native, astrbot_config_path)
-                    saved = True
+                    tmp_native = f"{candidate_cfg}.{uuid.uuid4().hex}.tmp"
+                    with open(tmp_native, "w", encoding="utf-8") as wf:
+                        json.dump(conf_dict, wf, ensure_ascii=False, indent=2)
+                    os.replace(tmp_native, candidate_cfg)
             except Exception as e:
-                logger.warning(f"FigurinePro: 写入 AstrBot 官方配置文件失败: {e}")
+                logger.warning(f"FigurinePro: 写入主配置文件失败: {e}")
 
-            # 3. 物理原子写入插件本地备份 dynamic_config.json
             config_path = os.path.join(StarTools.get_data_dir(), "dynamic_config.json")
+
             dynamic_keys = list(self._DYNAMIC_CONFIG_KEYS)
             previous_overrides = set()
             if os.path.exists(config_path):
@@ -1016,7 +987,9 @@ class ShoubanhuaPlugin(Star):
                 override_keys = sorted(previous_overrides or dynamic_keys)
 
             self._write_dynamic_config_backup(config_path, override_keys)
-            logger.info("FigurinePro: 配置已成功双向持久化落盘并热重载")
+
+            if not saved:
+                logger.info("FigurinePro: 无法通过原生方法保存，已使用本地 dynamic_config.json 进行了持久化")
 
         except Exception as e:
             logger.error(f"FigurinePro Config Save Failed: {e}")
@@ -1445,35 +1418,9 @@ class ShoubanhuaPlugin(Star):
 
     async def _register_generated_image(self, session_id: str, image_bytes: Optional[bytes],
                                         uid: str = "", gid: str = "", prompt: str = "", preset_name: str = "", model: str = ""):
-        """缓存会话中最近成功生成的图片字节，供 PDF 打包直接使用，并持久化写入历史画廊"""
+        """记录会话级图片上下文，供追问使用（如修改上面那张）"""
         if not session_id or not isinstance(image_bytes, bytes) or len(image_bytes) == 0:
             return
-
-        # 写入全局持久化历史画廊
-        try:
-            await self.data_mgr.record_generated_image(
-                image_bytes=image_bytes,
-                uid=uid or session_id,
-                gid=gid,
-                prompt=prompt or "手办化生图",
-                preset_name=preset_name or "默认",
-                model=model
-            )
-        except Exception as e:
-            logger.error(f"写入历史画廊失败: {e}")
-
-        async with self._session_generated_images_lock:
-            current = self._session_generated_images.get(session_id, [])
-
-            # 按内容去重，避免重复缓存同一张图
-            exists = any(img == image_bytes for img in current)
-            if not exists:
-                current.append(image_bytes)
-
-            if len(current) > self._session_generated_images_max:
-                current = current[-self._session_generated_images_max:]
-
-            self._session_generated_images[session_id] = current
 
         await self._remember_session_image_context(
             session_id,
@@ -2599,6 +2546,10 @@ class ShoubanhuaPlugin(Star):
                                 res = await self._prepare_send_image_bytes(res)
                                 elapsed = (datetime.now() - start_time).total_seconds()
                                 await self.data_mgr.record_usage(uid, gid)
+                                await self.data_mgr.record_generated_image(
+                                    image_bytes=res, uid=uid, gid=gid,
+                                    prompt=prompt, preset_name=preset_name, model=model
+                                )
                                 await self._register_generation_success(event.unified_msg_origin, 1)
                                 await self._register_generated_image(event.unified_msg_origin, res)
 
@@ -2739,6 +2690,10 @@ class ShoubanhuaPlugin(Star):
                                 res = await self._prepare_send_image_bytes(res)
                                 elapsed = (datetime.now() - start_time).total_seconds()
                                 await self.data_mgr.record_usage(uid, gid)
+                                await self.data_mgr.record_generated_image(
+                                    image_bytes=res, uid=uid, gid=gid,
+                                    prompt=prompt, preset_name=preset_name, model=model
+                                )
                                 await self._register_generation_success(event.unified_msg_origin, 1)
                                 await self._register_generated_image(event.unified_msg_origin, res)
 
@@ -3432,6 +3387,10 @@ class ShoubanhuaPlugin(Star):
             res = await self._prepare_send_image_bytes(res)
             elapsed = (datetime.now() - start).total_seconds()
             await self.data_mgr.record_usage(uid, gid)
+            await self.data_mgr.record_generated_image(
+                image_bytes=res, uid=uid, gid=gid,
+                prompt=user_prompt, preset_name=preset_name, model=model
+            )
             await self._register_generation_success(event.unified_msg_origin, 1)
             await self._register_generated_image(event.unified_msg_origin, res)
             if not is_bnn: await self.data_mgr.save_preset_image(base_cmd, res)
@@ -3497,6 +3456,10 @@ class ShoubanhuaPlugin(Star):
             res = await self._prepare_send_image_bytes(res)
             elapsed = (datetime.now() - start).total_seconds()
             await self.data_mgr.record_usage(uid, norm_id(event.get_group_id()))
+            await self.data_mgr.record_generated_image(
+                image_bytes=res, uid=uid, gid=norm_id(event.get_group_id()),
+                prompt=final_prompt, preset_name=preset_name, model=model
+            )
             await self._register_generation_success(event.unified_msg_origin, 1)
             await self._register_generated_image(event.unified_msg_origin, res)
             quota_str = self._get_quota_str(deduction, uid, norm_id(event.get_group_id()))
@@ -4832,6 +4795,10 @@ class ShoubanhuaPlugin(Star):
                 res = await self._prepare_send_image_bytes(res)
                 elapsed = (datetime.now() - start_time).total_seconds()
                 await self.data_mgr.record_usage(uid, gid)
+                await self.data_mgr.record_generated_image(
+                    image_bytes=res, uid=uid, gid=gid,
+                    prompt=prompt, preset_name=preset_name, model=model
+                )
                 await self._register_generation_success(event.unified_msg_origin, 1)
                 await self._register_generated_image(event.unified_msg_origin, res)
 
@@ -5170,6 +5137,10 @@ class ShoubanhuaPlugin(Star):
                                     res = await self._prepare_send_image_bytes(res)
                                     pdf_result_images.append(res)
                                     await self.data_mgr.record_usage(uid, gid)
+                                    await self.data_mgr.record_generated_image(
+                                        image_bytes=res, uid=uid, gid=gid,
+                                        prompt=prompt, preset_name=preset_name, model=model
+                                    )
                                     await self._register_generation_success(event.unified_msg_origin, 1)
                                     await self._register_generated_image(event.unified_msg_origin, res)
                                     success = True
@@ -5462,6 +5433,10 @@ class ShoubanhuaPlugin(Star):
                                     async with results_lock:
                                         pdf_result_images_dict[index] = res
                                     await self.data_mgr.record_usage(uid, gid)
+                                    await self.data_mgr.record_generated_image(
+                                        image_bytes=res, uid=uid, gid=gid,
+                                        prompt=prompt, preset_name=preset_name, model=model
+                                    )
                                     await self._register_generation_success(event.unified_msg_origin, 1)
                                     await self._register_generated_image(event.unified_msg_origin, res)
                                     success = True
@@ -5960,6 +5935,10 @@ class ShoubanhuaPlugin(Star):
             res = await self._prepare_send_image_bytes(res)
             elapsed = (datetime.now() - start).total_seconds()
             await self.data_mgr.record_usage(uid, gid)
+            await self.data_mgr.record_generated_image(
+                image_bytes=res, uid=uid, gid=gid,
+                prompt=full_prompt, preset_name="人设", model=model
+            )
             await self._register_generation_success(event.unified_msg_origin, 1)
             await self._register_generated_image(event.unified_msg_origin, res)
 
