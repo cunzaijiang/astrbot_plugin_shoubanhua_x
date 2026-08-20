@@ -139,11 +139,10 @@ class WebApiHandler:
 
         changed_keys = []
         for k, v in config_patch.items():
-            if k in self.plugin.conf:
-                self.plugin.conf[k] = v
-                changed_keys.append(k)
+            self.plugin.conf[k] = v
+            changed_keys.append(k)
 
-        # 保存配置
+        # 保存配置（调用 AstrBot 原生 save_config 与双向持久化）
         self.plugin._save_config(changed_keys=changed_keys)
         
         # 重新热载 api_mgr / img_mgr / data_mgr
@@ -504,7 +503,7 @@ class WebApiHandler:
                 "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
                 "items": items,
                 "storage": storage_info,
-                "max_gb": float(self.plugin.conf.get("image_storage_max_gb", "5") or "5"),
+                "max_gb": float(self.plugin.conf.get("image_storage_max_gb", 5.0) or 5.0),
                 "cleanup_ratio": float(self.plugin.conf.get("image_cleanup_ratio", 0.5) or 0.5)
             }
         })
