@@ -523,7 +523,6 @@ class ApiManager:
         )
         logger.info(f"Retry Images API with multipart/form-data, candidate urls: {candidate_urls}")
 
-        # 注意：aiohttp 在发送 FormData 时会自动计算带 boundary 的 Content-Type，不要在此处传入 Content-Type
         headers = {
             "Authorization": f"Bearer {key}"
         }
@@ -602,19 +601,6 @@ class ApiManager:
         """调用 Images API (DALL-E 风格接口) - 作为 fallback"""
 
         has_input_image = bool(images)
-        # 如果带有参考图，部分中转和 OpenAI 官方 /images/edits 接口强制要求 multipart/form-data 格式
-        # 若直接使用 JSON 发送，服务端解析 multipart 会报 400 "multipart 请求解析失败"
-        # 因此当 has_input_image 为 True 时，优先尝试 multipart，若报错再尝试 JSON
-        if has_input_image:
-            multipart_res = await self._call_images_api_multipart(
-                images, prompt, model, key, base_url, proxy,
-                generation_params=generation_params,
-                exact_endpoint=exact_endpoint,
-            )
-            if isinstance(multipart_res, bytes) or (isinstance(multipart_res, str) and not multipart_res.startswith("Images API Multipart Error 400") and not multipart_res.startswith("Images API edits endpoint unsupported")):
-                return multipart_res
-            logger.info("Images API multipart 尝试失败，回退尝试 application/json 格式...")
-
         candidate_urls = [base_url.rstrip("/")] if exact_endpoint else self._build_candidate_generic_image_urls(
             base_url, has_input_image=has_input_image
         )
