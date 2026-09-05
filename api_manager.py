@@ -548,11 +548,13 @@ class ApiManager:
                     form.add_field("response_format", "b64_json")
 
                 if images:
-                    img = images[0]
-                    mime = self.get_mime_type(img)
-                    ext = mime.split("/")[-1] if "/" in mime else "png"
-                    filename = f"input.{ext}"
-                    form.add_field("image", img, filename=filename, content_type=mime)
+                    for i, img in enumerate(images):
+                        mime = self.get_mime_type(img)
+                        ext = mime.split("/")[-1] if "/" in mime else "png"
+                        filename = f"input_{i}.{ext}"
+                        if i == 0:
+                            form.add_field("image", img, filename=filename, content_type=mime)
+                        form.add_field("images", img, filename=filename, content_type=mime)
 
                 current_proxy = self._get_request_proxy(url, proxy)
                 async with session.post(url, data=form, headers=headers, proxy=current_proxy, timeout=timeout) as resp:
@@ -639,9 +641,18 @@ class ApiManager:
             payload["image"] = data_uri
             payload["image_url"] = data_uri
             payload["input_image"] = data_uri
-            payload["images"] = [
-                {"image_url": data_uri, "url": data_uri}
-            ]
+
+            # 多图全量构造：兼容各种中转服务（存在酱/NewAPI等），支持单图和多图参考
+            images_payload = []
+            image_urls_payload = []
+            for item in images:
+                item_mime = self.get_mime_type(item)
+                item_b64 = base64.b64encode(item).decode()
+                item_uri = f"data:{item_mime};base64,{item_b64}"
+                images_payload.append({"image_url": item_uri, "url": item_uri})
+                image_urls_payload.append(item_uri)
+            payload["images"] = images_payload
+            payload["image_urls"] = image_urls_payload
 
         try:
             timeout_val = self.config.get("timeout", 120)

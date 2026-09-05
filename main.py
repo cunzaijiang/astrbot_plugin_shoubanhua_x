@@ -1711,7 +1711,11 @@ class ShoubanhuaPlugin(Star):
             return images
 
         session_id = event.unified_msg_origin
-        max_images = 3 if merge_multiple_images else 1
+        # 智能检测上下文中的多图参考意图
+        wants_multi = merge_multiple_images or any(k in request_text for k in [
+            "两张", "三张", "四张", "多张", "几张", "结合", "融合", "多图", "参考", "这两张", "这几张", "一起", "共同", "图一", "图二"
+        ])
+        max_images = 4 if wants_multi else 1
         source_preference = self._infer_context_image_source_preference(request_text)
 
         context_images = await self._get_recent_session_image_context(
@@ -2937,6 +2941,22 @@ class ShoubanhuaPlugin(Star):
                 count=inferred_count,
             )
 
+        # 检查是否包含图片或 @用户头像（防止 LLM 将改图/参考头像误判为纯文生图）
+        bot_id = self._get_bot_id(event)
+        ref_images = await self.img_mgr.extract_images_from_event(
+            event, ignore_id=bot_id, context=self.context, include_at_avatar=True
+        )
+        if ref_images:
+            logger.info(f"shoubanhua_draw_image 检测到事件包含 {len(ref_images)} 张参考图/头像，自动转流为 shoubanhua_edit_image")
+            return await self.image_edit_tool(
+                event=event,
+                prompt=prompt,
+                use_message_images=True,
+                task_types="edit",
+                count=count,
+                merge_multiple_images=True,
+            )
+
         # 0.1 检查图片生成冷却时间
         uid = norm_id(event.get_sender_id())
         in_cooldown, remaining = self._check_image_cooldown(uid)
@@ -3049,8 +3069,8 @@ class ShoubanhuaPlugin(Star):
         如果用户明确要求“修改上面那张 / 改刚才生成的图 / 继续改 / 在这个基础上改”，即使当前消息没有图片也要调用本工具；系统会自动使用最近的用户图片或Bot生成图片作为输入，不需要让用户引用。
 
         【多图处理规则】当用户提供/引用了多张图片时：
-        - 默认情况 (merge_multiple_images=false)：会将这多张图片拆开，【分别、独立地】生成每一张图片。适用于用户一次性发多张图片想分别转化的场景。
-        - 只有当用户明确要求"把这几张图融合"、"参考第一张修改第二张"等合并需求时：将 merge_multiple_images 设置为 true。这会将多图作为一个整体发给模型。
+        - 如果用户是提供多张图作为参考素材（如"参考这几张图"、"结合两张图"、"多图参考"、"图1的人穿图2的衣服"等）：必须将 merge_multiple_images 设置为 true！这会将所有参考图一并发送给生图模型进行多图参考。
+        - 只有当用户明确希望将每张图分别独立批量转化时（如"把这几张图都转成手办"）：才设置 merge_multiple_images=false。
 
         【批量生成不同版本的数量控制（极度重要）】
         - 除非用户明确指定了数量（如"画5张"），否则【严禁】随意设置大量 count。
@@ -3119,6 +3139,15 @@ class ShoubanhuaPlugin(Star):
         # 根据配置决定是否隐藏进度提示（白名单用户和普通用户使用同一开关）
         show_llm_progress = self._get_conf_bool("llm_show_progress", True)
         hide_llm_result_text = True
+
+        # 智能检测多图参考意图：如果用户在提示或原话中提到多图参考、结合等，自动开启 merge_multiple_images
+        all_req_text = " ".join([str(getattr(event, "message_str", "") or ""), str(prompt or "")]).lower()
+        has_multi_ref_intent = any(kw in all_req_text for kw in [
+            "参考", "结合", "融合", "拼", "多图", "两张", "三张", "这几张", "第一张", "第二张", "图一", "图二",
+            "合影", "合照", "动作", "姿势", "服装", "衣服", "风格", "同框"
+        ])
+        if has_multi_ref_intent:
+            merge_multiple_images = True
 
         # 3. 提取图片。当前消息没有图时，自动回溯用户/机器人最近图片上下文。
         images = await self._resolve_contextual_image_inputs(
@@ -3382,10 +3411,11 @@ class ShoubanhuaPlugin(Star):
 
         wants_context_image = bool(user_prompt and self._looks_like_context_image_reference(user_prompt))
         if not images and wants_context_image:
+            wants_multi = any(k in user_prompt for k in ["两张", "三张", "多张", "几张", "结合", "融合", "多图", "参考"])
             images = await self._resolve_contextual_image_inputs(
                 event,
                 prompt=user_prompt,
-                merge_multiple_images=False,
+                merge_multiple_images=wants_multi,
                 include_current=False,
                 allow_context_fallback=False,
             )
@@ -5701,7 +5731,7 @@ class ShoubanhuaPlugin(Star):
         ]
         _has_ref_intent = any(kw in requested_text for kw in _ref_intent_keywords)
         user_images = await self.img_mgr.extract_images_from_event(
-            event, ignore_id=bot_id, context=None, include_at_avatar=False
+            event, ignore_id=bot_id, context=None, include_at_avatar=True
         )
         user_ref_source = "current_or_expanded_reply" if user_images else ""
 
@@ -5709,7 +5739,7 @@ class ShoubanhuaPlugin(Star):
         # “cos 某角色给我看”不等于用户补充了参考图，否则会误捞上一轮生成图。
         if not user_images and _has_ref_intent:
             user_images = await self.img_mgr.extract_images_from_event(
-                event, ignore_id=bot_id, context=self.context, include_at_avatar=False
+                event, ignore_id=bot_id, context=self.context, include_at_avatar=True
             )
             if user_images:
                 user_ref_source = "reply_fetch_by_explicit_reference"

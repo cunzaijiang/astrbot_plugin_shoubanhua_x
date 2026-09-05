@@ -445,8 +445,21 @@ class ImageManager:
         return None
 
     async def get_avatar(self, user_id: str) -> bytes | None:
-        if not user_id.isdigit(): return None
-        return await self._download_image(f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=640")
+        uid = str(user_id).strip()
+        if not uid.isdigit():
+            return None
+        urls = [
+            f"https://q4.qlogo.cn/headimg_dl?dst_uin={uid}&spec=640",
+            f"https://q1.qlogo.cn/g?b=qq&nk={uid}&s=640"
+        ]
+        for u in urls:
+            try:
+                data = await self.load_bytes(u)
+                if data and len(data) > 0:
+                    return data
+            except Exception:
+                pass
+        return None
 
     def images_to_pdf(self, images_bytes: List[bytes]) -> bytes:
         """将多张图片字节打包为单个 PDF"""
@@ -583,73 +596,95 @@ class ImageManager:
 
     async def extract_images_from_event(self, event: AstrMessageEvent, ignore_id: str = None, context=None,
                                         include_at_avatar: bool = True) -> List[bytes]:
-        """从消息事件中提取所有图片 - 并发加速"""
+        """从消息事件中提取所有图片（当前消息多图、引用消息多图、@用户头像） - 并发加速"""
         tasks = []
-        at_users = set()  # 使用集合去重
+        at_users = []
+        seen_at_users = set()
 
-        # 1. 规范化 ignore_id，确保是字符串且去除空白
         if ignore_id:
             ignore_id = str(ignore_id).strip()
 
-        logger.debug(f"extract_images_from_event: ignore_id={ignore_id}")
+        # 统计 At 次数和引用发送者 ID，用于过滤自动 At 和触发 Bot 的单次 At
+        reply_sender_id = None
+        at_counts = {}
+        msg_components = getattr(event.message_obj, "message", []) or []
 
-        # 2. 收集所有待下载/读取的任务
-        for seg in event.message_obj.message:
-            # 回复链
+        for seg in msg_components:
             if isinstance(seg, Reply):
-                # 优先尝试使用 chain (AstrBot 可能会自动填充)
+                if hasattr(seg, "sender_id") and seg.sender_id:
+                    reply_sender_id = str(seg.sender_id).strip()
+            elif isinstance(seg, At):
+                qq = str(seg.qq).strip()
+                if qq and qq != "all":
+                    at_counts[qq] = at_counts.get(qq, 0) + 1
+
+        for seg in msg_components:
+            # 1. 处理引用消息中的所有图片
+            if isinstance(seg, Reply):
                 found_in_chain = False
                 if seg.chain:
                     for s_chain in seg.chain:
                         if isinstance(s_chain, Image):
                             found_in_chain = True
-                            if s_chain.url:
-                                tasks.append(self.load_bytes(s_chain.url))
-                            elif s_chain.file:
-                                tasks.append(self.load_bytes(s_chain.file))
-                
-                # 如果 chain 中没有图片，且有 context 和 message_id，尝试主动获取消息
+                            src = getattr(s_chain, "url", None) or getattr(s_chain, "file", None) or getattr(s_chain, "path", None)
+                            if src and self._is_probably_valid_source(src):
+                                tasks.append(self.load_bytes(src))
+
                 if not found_in_chain and context and hasattr(seg, "id") and seg.id:
                     try:
                         logger.debug(f"Reply chain empty/no-image, fetching message_id: {seg.id}")
                         components = await self._fetch_reply_components(context, seg.id)
-
                         for comp in components:
                             if isinstance(comp, Image):
-                                if self._is_probably_valid_source(getattr(comp, "url", None)):
-                                    tasks.append(self.load_bytes(comp.url))
-                                elif self._is_probably_valid_source(getattr(comp, "file", None)):
-                                    tasks.append(self.load_bytes(comp.file))
+                                src = getattr(comp, "url", None) or getattr(comp, "file", None) or getattr(comp, "path", None)
+                                if src and self._is_probably_valid_source(src):
+                                    tasks.append(self.load_bytes(src))
                     except Exception as e:
                         logger.warning(f"Failed to fetch reply message {seg.id}: {e}")
 
-            # 当前消息图片
+            # 2. 处理当前消息中的所有图片
             elif isinstance(seg, Image):
-                if self._is_probably_valid_source(getattr(seg, "url", None)):
-                    tasks.append(self.load_bytes(seg.url))
-                elif self._is_probably_valid_source(getattr(seg, "file", None)):
-                    tasks.append(self.load_bytes(seg.file))
-            # @用户
+                src = getattr(seg, "url", None) or getattr(seg, "file", None) or getattr(seg, "path", None)
+                if src and self._is_probably_valid_source(src):
+                    tasks.append(self.load_bytes(src))
+
+            # 3. 处理 At 用户头像（借鉴 gemini_image 的自动过滤策略）
             elif isinstance(seg, At):
                 qq = str(seg.qq).strip()
-                # 过滤机器人自身的 ID
-                if ignore_id and qq == ignore_id:
+                if not qq or qq == "all":
                     continue
-                at_users.add(qq)
 
-        # 3. 文本中正则匹配的@
-        # 有些平台 At 可能表现为纯文本
-        text_ats = re.findall(r'@(\d+)', event.message_str)
+                # 如果这是引用消息附带的自动 At，且只出现了一次，忽略头像
+                if reply_sender_id and qq == reply_sender_id and at_counts.get(qq, 0) == 1:
+                    logger.debug(f"[ImageManager] 忽略引用消息的自动At: {qq}")
+                    continue
+
+                # 如果是触发 Bot 自身的单次 At，忽略头像
+                self_id = str(ignore_id or getattr(event, "get_self_id", lambda: "")() or "").strip()
+                if self_id and qq == self_id and at_counts.get(qq, 0) == 1:
+                    logger.debug(f"[ImageManager] 忽略唤醒Bot的单次At: {qq}")
+                    continue
+
+                if qq not in seen_at_users:
+                    seen_at_users.add(qq)
+                    at_users.append(qq)
+
+        # 4. 纯文本中的显式 @
+        text_ats = re.findall(r'@(\d+)', event.message_str or "")
         for qq in text_ats:
             qq = str(qq).strip()
-            # 过滤机器人自身的 ID
-            if ignore_id and qq == ignore_id:
+            if not qq:
                 continue
-            at_users.add(qq)
+            self_id = str(ignore_id or getattr(event, "get_self_id", lambda: "")() or "").strip()
+            if self_id and qq == self_id:
+                continue
+            if qq not in seen_at_users:
+                seen_at_users.add(qq)
+                at_users.append(qq)
 
-        # 4. 头像任务 (去重后)
+        # 5. 头像加载任务
         if include_at_avatar and at_users:
-            logger.debug(f"At users to fetch avatars: {at_users}")
+            logger.info(f"[ImageManager] 获取到 @用户 头像作为参考图: {at_users}")
             for uid in at_users:
                 tasks.append(self.get_avatar(uid))
 
