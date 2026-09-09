@@ -51,6 +51,17 @@ def normalize_aspect_ratio(value: Optional[str], default: str = "1:1") -> str:
     return text if text in SUPPORTED_ASPECT_RATIOS else default
 
 
+SUPPORTED_QUALITIES = ("low", "medium", "high", "xhigh", "max", "auto")
+
+
+def normalize_quality(value: Optional[str], default: str = "auto") -> str:
+    text = str(value or "").strip().lower()
+    if text in SUPPORTED_QUALITIES:
+        return text
+    normalized_default = str(default or "auto").strip().lower()
+    return normalized_default if normalized_default in SUPPORTED_QUALITIES else "auto"
+
+
 def detect_aspect_ratio_from_image(image_data: bytes, default: str = "1:1") -> str:
     """读取图片尺寸，并吸附到最接近的常规宽高比。"""
     if not image_data:
@@ -76,8 +87,10 @@ def resolve_image_generation_params(
     default_aspect_ratio: str = "1:1",
     resolution: Optional[str] = None,
     aspect_ratio: Optional[str] = None,
+    default_quality: str = "auto",
+    quality: Optional[str] = None,
 ) -> Dict[str, str]:
-    """从提示词和显式参数中解析图片分辨率、比例及 OpenAI size。
+    """从提示词和显式参数中解析图片分辨率、比例及 OpenAI size 与 quality。
 
     显式参数优先于提示词；提示词优先于配置默认值。若提示词包含映射表中的
     精确像素尺寸（如 3840x2160），会同时反推出 4K 与 16:9。
@@ -113,8 +126,11 @@ def resolve_image_generation_params(
     if not aspect_ratio:
         final_ratio = normalize_aspect_ratio(detected_ratio, default_aspect_ratio)
 
+    final_quality = normalize_quality(quality, default_quality)
+
     return {
         "resolution": final_resolution,
         "aspect_ratio": final_ratio,
         "size": IMAGE_SIZE_MAP[final_resolution][final_ratio],
+        "quality": final_quality,
     }

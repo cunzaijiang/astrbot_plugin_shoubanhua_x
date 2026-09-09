@@ -543,6 +543,7 @@
       document.getElementById('cfgT2IModel').value = c.text_to_image_model || '';
       document.getElementById('cfgResolution').value = c.image_resolution || '1K';
       document.getElementById('cfgAspectRatio').value = c.image_aspect_ratio || '4:3';
+      document.getElementById('cfgQuality').value = c.image_quality || 'auto';
       document.getElementById('cfgTimeout').value = c.timeout || 120;
       document.getElementById('cfgStorageMaxGB').value = c.image_storage_max_gb || 5.0;
       document.getElementById('cfgCleanupRatio').value = String(c.image_cleanup_ratio || 0.5);
@@ -586,6 +587,7 @@
           text_to_image_model: document.getElementById('cfgT2IModel').value.trim(),
           image_resolution: document.getElementById('cfgResolution').value,
           image_aspect_ratio: document.getElementById('cfgAspectRatio').value,
+          image_quality: document.getElementById('cfgQuality').value,
           timeout: parseInt(document.getElementById('cfgTimeout').value) || 120,
           image_storage_max_gb: parseFloat(document.getElementById('cfgStorageMaxGB').value) || 5.0,
           image_cleanup_ratio: parseFloat(document.getElementById('cfgCleanupRatio').value) || 0.5,

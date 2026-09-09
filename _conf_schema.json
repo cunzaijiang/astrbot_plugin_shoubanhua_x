@@ -175,6 +175,20 @@
             "21:9"
         ]
     },
+    "image_quality": {
+        "description": "【画质】图像生成质量",
+        "type": "string",
+        "hint": "生成图片时传递给接口的质量参数 (quality)。支持 low, medium, high, xhigh, max 以及 auto (自动/不强制指定)。",
+        "default": "auto",
+        "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "auto"
+        ]
+    },
     "enable_luxury_mode": {
         "description": "【全局】启用奢侈模式",
         "type": "bool",

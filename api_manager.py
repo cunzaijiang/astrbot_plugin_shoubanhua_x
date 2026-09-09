@@ -528,7 +528,8 @@ class ApiManager:
         }
 
         generation_params = generation_params or resolve_image_generation_params(
-            prompt, self.config.get("image_resolution", "1K")
+            prompt, self.config.get("image_resolution", "1K"),
+            default_quality=self.config.get("image_quality", "auto"),
         )
         res_set = generation_params["resolution"]
         final_prompt = f"(Masterpiece, Best Quality, {res_set} Resolution), {prompt}" if res_set != "1K" else prompt
@@ -544,6 +545,9 @@ class ApiManager:
                 form.add_field("prompt", final_prompt)
                 form.add_field("n", "1")
                 form.add_field("size", generation_params["size"])
+                quality_val = generation_params.get("quality") or self.config.get("image_quality", "auto")
+                if quality_val and quality_val != "auto":
+                    form.add_field("quality", quality_val)
                 if not str(model).lower().startswith("gpt-image"):
                     form.add_field("response_format", "b64_json")
 
@@ -615,7 +619,8 @@ class ApiManager:
 
         # 画质强化 Prompt
         generation_params = generation_params or resolve_image_generation_params(
-            prompt, self.config.get("image_resolution", "1K")
+            prompt, self.config.get("image_resolution", "1K"),
+            default_quality=self.config.get("image_quality", "auto"),
         )
         res_set = generation_params["resolution"]
         final_prompt = f"(Masterpiece, Best Quality, {res_set} Resolution), {prompt}" if res_set != "1K" else prompt
@@ -627,6 +632,9 @@ class ApiManager:
             "n": 1,
             "size": generation_params["size"],
         }
+        quality_val = generation_params.get("quality") or self.config.get("image_quality", "auto")
+        if quality_val and quality_val != "auto":
+            payload["quality"] = quality_val
         if not str(model).lower().startswith("gpt-image"):
             payload["response_format"] = "b64_json"
 
@@ -1018,6 +1026,7 @@ class ApiManager:
             default_aspect_ratio=default_aspect_ratio,
             resolution=resolution,
             aspect_ratio=aspect_ratio,
+            default_quality=provider.get("image_quality") or self.config.get("image_quality", "auto"),
         )
 
         custom_kind = ""
@@ -1325,10 +1334,12 @@ class ApiManager:
             default_aspect_ratio=default_aspect_ratio,
             resolution=resolution,
             aspect_ratio=aspect_ratio,
+            default_quality=self.config.get("image_quality", "auto"),
         )
         logger.info(
             f"图片参数已解析: aspect_ratio={generation_params['aspect_ratio']}, "
-            f"resolution={generation_params['resolution']}, size={generation_params['size']}"
+            f"resolution={generation_params['resolution']}, size={generation_params['size']}, "
+            f"quality={generation_params.get('quality', 'auto')}"
         )
 
         custom_kind = ""
